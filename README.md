@@ -14,7 +14,7 @@
 
 Lightweight, low-latency Turkish speech models for real-time applications.
 
-Seda aims to provide models that are small enough to run on a CPU, fast enough for live audio, accurate enough for production, and open for commercial use. `sedalib` is the Python package for running them. It currently ships streaming speech recognition (STT) on top of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
+Seda aims to provide models that are small enough to run on a CPU, fast enough for live audio, accurate enough for production, and available for commercial use. `sedalib` is the Python package for running them. It currently ships streaming speech recognition (STT) on top of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
 
 > [!WARNING]
 > This library and its models are under active development. APIs and model releases may change.
