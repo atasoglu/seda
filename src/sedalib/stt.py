@@ -16,7 +16,7 @@ _ACOUSTIC_FILES = [
     "tokens.txt",
 ]
 _LM_FILES = ["lm/rnnlm.int8.onnx", "lm/2gram.fst"]
-_TAIL_PADDING = [0.0] * int(SAMPLE_RATE * 0.66)
+_TAIL_PADDING_SECONDS = 0.66
 
 
 class Stream:
@@ -25,16 +25,19 @@ class Stream:
     def __init__(self, recognizer: sherpa_onnx.OnlineRecognizer):
         self._recognizer = recognizer
         self._stream = recognizer.create_stream()
+        self._sample_rate = SAMPLE_RATE
 
     def accept(self, samples: Sequence[float], sample_rate: int = SAMPLE_RATE) -> str:
         """Feed mono float32 samples in [-1, 1] and return the current partial text."""
+        self._sample_rate = sample_rate
         self._stream.accept_waveform(sample_rate, samples)
         self._decode()
         return self.text
 
     def finish(self) -> str:
         """Flush remaining audio and return the final text."""
-        self._stream.accept_waveform(SAMPLE_RATE, _TAIL_PADDING)
+        padding = [0.0] * int(self._sample_rate * _TAIL_PADDING_SECONDS)
+        self._stream.accept_waveform(self._sample_rate, padding)
         self._stream.input_finished()
         self._decode()
         return self.text

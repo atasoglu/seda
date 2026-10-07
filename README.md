@@ -86,6 +86,15 @@ The language model improves accuracy at the cost of some extra compute. Pass `us
 uv run python examples/transcribe.py audio.wav
 ```
 
+## Demo
+
+A Gradio demo with live microphone streaming and file transcription is available as an extra:
+
+```bash
+pip install "sedalib[demo]"
+python -m sedalib.demo.stt
+```
+
 ## Development
 
 ```bash
