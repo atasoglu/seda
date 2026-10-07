@@ -1,7 +1,7 @@
 # seda
 
 [![PyPI](https://img.shields.io/pypi/v/sedalib)](https://pypi.org/project/sedalib/)
-[![Python](https://img.shields.io/pypi/pyversions/sedalib)](https://pypi.org/project/sedalib/)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/github/license/atasoglu/seda)](LICENSE)
 [![ONNX](https://img.shields.io/badge/runtime-ONNX-005CED?logo=onnx&logoColor=white)](https://github.com/k2-fsa/sherpa-onnx)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-FFD21E)](https://huggingface.co/atasoglu/seda-v0.1)
