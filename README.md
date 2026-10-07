@@ -8,6 +8,10 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
+> *Bâki kalan bu kubbede bir hoş sadâ imiş...*
+>
+> — Bâkî
+
 Lightweight, low-latency Turkish speech models for real-time applications.
 
 Seda aims to provide models that are small enough to run on a CPU, fast enough for live audio, accurate enough for production, and open for commercial use. `sedalib` is the Python package for running them. It currently ships streaming speech recognition (STT) on top of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
