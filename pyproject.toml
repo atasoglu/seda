@@ -1,0 +1,27 @@
+[project]
+name = "sedalib"
+version = "0.1.0"
+description = "Lightweight, low-latency Turkish speech models for real-time applications"
+readme = "README.md"
+authors = [
+    { name = "atasoglu", email = "ahmetatasoglu98@gmail.com" }
+]
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["turkish", "speech-recognition", "stt", "streaming", "sherpa-onnx"]
+dependencies = [
+    "huggingface-hub>=2.1.1",
+    "sherpa-onnx>=1.13.8",
+    "sherpa-onnx-core>=1.13.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.2,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "prek>=0.5.5",
+    "ruff>=0.16.10",
+]
