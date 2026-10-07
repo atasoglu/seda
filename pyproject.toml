@@ -1,6 +1,6 @@
 [project]
 name = "sedalib"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Lightweight, low-latency Turkish speech models for real-time applications"
 readme = "README.md"
 authors = [
@@ -22,11 +22,20 @@ demo = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.10.2,<0.11.0"]
-build-backend = "uv_build"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sedalib"]
 
 [dependency-groups]
 dev = [
     "prek>=0.5.5",
     "ruff>=0.16.10",
+]
+examples = [
+    "sounddevice>=0.5.6",
 ]

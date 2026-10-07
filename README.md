@@ -13,7 +13,7 @@ Lightweight, low-latency Turkish speech models for real-time applications.
 Seda aims to provide models that are small enough to run on a CPU, fast enough for live audio, accurate enough for production, and open for commercial use. `sedalib` is the Python package for running them. It currently ships streaming speech recognition (STT) on top of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
 
 > [!WARNING]
-> This library and its models are under active development. APIs and model releases may change, including breaking changes.
+> This library and its models are under active development. APIs and model releases may change.
 
 ## Models
 
@@ -77,14 +77,6 @@ Recognizer.from_pretrained(
 ```
 
 The language model improves accuracy at the cost of some extra compute. Pass `use_lm=False` for the lightest setup. To load a model you have already downloaded, use `Recognizer("path/to/model_dir")`.
-
-## Examples
-
-[examples/transcribe.py](examples/transcribe.py) transcribes a 16-bit PCM WAV file in streaming mode:
-
-```bash
-uv run python examples/transcribe.py audio.wav
-```
 
 ## Demo
 
