@@ -7,7 +7,7 @@ import sherpa_onnx
 
 from .hub import download
 
-DEFAULT_REPO_ID = "atasoglu/seda-v0.2"
+DEFAULT_REPO_ID = "atasoglu/seda-v0.1"
 SAMPLE_RATE = 16000
 _ACOUSTIC_FILES = [
     "encoder.int8.onnx",
@@ -17,7 +17,7 @@ _ACOUSTIC_FILES = [
 ]
 _LM_FILES = ["lm/rnnlm.int8.onnx", "lm/2gram.fst"]
 # Silence appended by finish() so the last chunk is decoded. It must cover one chunk plus the
-# encoder's right context: 1.28 s + ~0.14 s for seda-v0.2 (0.64 s chunks in seda-v0.1).
+# encoder's right context: 0.64 s + ~0.14 s for seda-v0.1 (1.28 s chunks in seda-v0.2).
 _TAIL_PADDING_SECONDS = 1.5
 
 

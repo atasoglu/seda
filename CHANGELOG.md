@@ -4,11 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-16
+
+### Changed
+
+- The default model is back to [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1), because seda-v0.2 is not public yet. 0.2.0 pointed to seda-v0.2 by default and fails to download the model; upgrade to 0.2.1.
+
 ## [0.2.0] - 2026-10-16
 
 ### Changed
 
-- The default model is now [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2): 8.89 WER on FLEURS (seda-v0.1: 11.52) and much more robust to noise, reverb and telephone audio. It uses 1.28 s chunks. Pass `"atasoglu/seda-v0.1"` to `Recognizer.from_pretrained` to keep the old model.
+- The default model was switched to seda-v0.2, which is not public yet.
 
 ### Fixed
 
