@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Seda builds and publishes Turkish speech models (STT, TTS, etc.). `sedalib` is the Python package that runs them. It currently wraps sherpa-onnx for streaming speech recognition with the [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) model.
+Seda builds and publishes Turkish speech models (STT, TTS, etc.). `sedalib` is the Python package that runs them. It currently wraps sherpa-onnx for streaming speech recognition with the [atasoglu/seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2) model (default) and [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1).
 
 ## Philosophy
 
