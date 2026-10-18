@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/github/license/atasoglu/seda)](LICENSE)
 [![ONNX](https://img.shields.io/badge/runtime-ONNX-005CED?logo=onnx&logoColor=white)](https://github.com/k2-fsa/sherpa-onnx)
-[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-FFD21E)](https://huggingface.co/atasoglu/seda-v0.1)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-FFD21E)](https://huggingface.co/atasoglu/seda-v0.2)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
@@ -16,24 +16,23 @@ Lightweight, low-latency Turkish speech models for real-time applications.
 
 Seda aims to provide models that are small enough to run on a CPU, fast enough for live audio, accurate enough for production, and available for commercial use. `sedalib` is the Python package for running them. It currently ships streaming speech recognition (STT) on top of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
 
-> [!WARNING]
-> This library and its models are under active development. APIs and model releases may change.
-
 ## Models
 
-| Model | Task | Architecture | Params | Eval |
+| Model | Task | Architecture | Params | FLEURS-TR test WER |
 | --- | --- | --- | --- | --- |
-| [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) | Streaming STT | Zipformer2 transducer | 66.1M | 11.52 WER (FLEURS) |
+| [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2) | Streaming STT | Zipformer2 transducer + second pass | 66.1M | 6.38 (`accurate`), 7.26 (`balanced`) |
+| [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) | Streaming STT | Zipformer2 transducer | 66.1M | 11.60 |
 
-WER is measured with beam search (4 paths) and the language model enabled. The model processes audio in 0.64-second chunks, so partial results arrive in real time. See the model card for more benchmarks.
+For comparison, Whisper medium scores 6.62 and Whisper large-v3 4.62 on the same set. See the [model card](https://huggingface.co/atasoglu/seda-v0.2) for noisy, telephone and broadcast audio.
 
 ## Installation
 
 ```bash
 pip install sedalib
+pip install "sedalib[format]"  # adds digits, punctuation and casing to the output
 ```
 
-Python 3.10 or newer is required. The only runtime dependencies are `sherpa-onnx` and `huggingface-hub`.
+Python 3.10 or newer is required. The core package depends only on `sherpa-onnx` and `huggingface-hub`.
 
 ## Quick start
 
@@ -53,38 +52,66 @@ Audio at other sample rates is resampled automatically.
 
 ## Streaming
 
-For live audio, open a stream and feed it chunks as they arrive. `accept` returns the current partial transcript, and `is_endpoint` tells you when the speaker has finished an utterance.
+For live audio, open a stream and feed it small pieces as they arrive. `accept` returns the current partial transcript, and `is_endpoint` turns true when the speaker pauses. `end_utterance` returns the final text and starts the next utterance.
 
 ```python
 stream = recognizer.stream()
 
-for chunk in microphone_chunks():  # e.g. 0.64 s of audio at a time
+for chunk in microphone_chunks():  # e.g. 100 ms of audio at a time
     partial = stream.accept(chunk, sample_rate=16000)
     print(partial)
 
     if stream.is_endpoint:
-        print("final:", stream.text)
-        stream.reset()  # start a new utterance
+        print("final:", stream.end_utterance())
 ```
 
-Call `stream.finish()` at the end of the audio to flush the remaining frames and get the final text. A single `Recognizer` can serve many independent streams.
+The end of speech is detected by Silero VAD after a 0.25 s pause (`endpoint_silence`). If your application already knows that the speaker stopped, for example with a push-to-talk button, call `end_utterance()` right away.
+
+To keep accepting audio while the final text is computed, split the two steps: `stream.cut()` ends the utterance and returns it, and `utterance.finalize()` can run in another thread.
+
+A single `Recognizer` can serve many streams at once, from different threads. Call `stream.finish()` at the end of the audio to flush the remaining frames and get the final text.
+
+## Modes
+
+| Mode | Live text | Final text | WER | Final text after a pause | RTF |
+| --- | --- | --- | --- | --- | --- |
+| `fast` | 0.64 s chunks, greedy | the same | 9.38 | 0.32 s | 0.042 |
+| `balanced` (default) | 1.28 s chunks, beam search + LM | the same | 7.26 | 0.37 s | 0.064 |
+| `accurate` | 0.64 s chunks, greedy | second pass with full context, beam search + LM | 6.38 | 0.77 s | 0.137 |
+
+- **WER:** FLEURS-TR test.
+- **Final text after a pause:** median time from the end of speech, including the 0.25 s pause the VAD waits for.
+- **Speed:** RTF on one thread of an Intel Core 5 210H laptop CPU, including the second pass.
+
+The second pass of `accurate` runs in the background while the utterance is spoken, so most of its work is done when the speaker stops.
 
 ## Options
 
 ```python
 Recognizer.from_pretrained(
-    "atasoglu/seda-v0.1",  # Hugging Face repo id
+    "atasoglu/seda-v0.2",  # Hugging Face repo id
     revision=None,  # pin a branch, tag or commit
-    use_lm=True,  # rescore with the language model
-    num_threads=1,  # CPU threads used for inference
+    mode="balanced",  # "fast", "balanced" or "accurate"
+    use_lm=None,  # override the mode: rescore with the language model
+    two_pass=None,  # override the mode: decode each utterance again for the final text
+    chunk=None,  # override the mode: 32 or 64 frames (0.64 or 1.28 s per streaming step)
+    punctuate=False,  # digits, punctuation, casing and apostrophes in final texts (needs [format])
+    num_threads=1,  # CPU threads per model
+    vad=None,  # Silero VAD for the end of speech (default: if the model ships it)
+    endpoint_silence=None,  # pause that ends an utterance, in s (default 0.25 with the VAD, 1.2 without)
 )
 ```
 
-The language model improves accuracy at the cost of some extra compute. Pass `use_lm=False` for the lightest setup. To load a model you have already downloaded, use `Recognizer("path/to/model_dir")`.
+`from_pretrained` downloads only the files the chosen options need. To load a model you have already downloaded, use `Recognizer("path/to/model_dir")`.
+
+- **Faster end of speech:** a shorter pause gives the final text sooner, but splits sentences more often at short hesitations. With 0.15 s, the final text arrives after about 0.22 s (`fast`) and 0.27 s (`balanced`).
+- **Threads:** `num_threads=2` makes `fast` and `balanced` about 15% faster. More threads do not help a single stream. To serve many users, give each stream one thread and run them in parallel: one recognizer scales to about 4× the throughput on 8 cores.
+- **Formatter:** `punctuate=True` writes "Bugün Ankara'da hava 24 derece" instead of "bugün ankarada hava yirmi dört derece". `sedalib.itn` converts only the numbers and needs no extra.
+- **seda-v0.1:** works with the `balanced` mode, with or without `use_lm`, and ends utterances with the 1.2 s silence rule. It does not have the files for `fast`, `accurate`, the VAD or the formatter.
 
 ## Demo
 
-A Gradio demo with live microphone streaming and file transcription is available as an extra:
+A Gradio demo with live microphone streaming, file transcription, a control panel for all options and latency stats is available as an extra:
 
 ```bash
 pip install "sedalib[demo]"
@@ -94,10 +121,12 @@ python -m sedalib.demo.stt
 ## Development
 
 ```bash
-uv sync
+uv sync --all-extras
 uv run prek install  # ruff lint and format hooks
+uv run pytest  # tests that need a model are skipped
+SEDA_TEST_MODEL=atasoglu/seda-v0.2,atasoglu/seda-v0.1 uv run pytest  # with models
 ```
 
 ## License
 
-The code is released under Apache-2.0. The acoustic model is Apache-2.0 as well. The optional language model is CC BY-SA 4.0 because it was trained on Wikipedia data, so pass `use_lm=False` if that is a concern for your use case.
+The code is released under Apache-2.0. The seda-v0.2 model files are CC BY-SA 4.0, because parts of their training data are share-alike: Khan Academy for the acoustic model, and Wikipedia for the language model and the formatter. The Silero VAD file shipped with the model is MIT. Commercial use is allowed under these terms; see the model cards for details.

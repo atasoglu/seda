@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Seda builds and publishes Turkish speech models (STT, TTS, etc.). `sedalib` is the Python package that runs them. It currently wraps sherpa-onnx for streaming speech recognition with the [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) model.
+Seda builds and publishes Turkish speech models (STT, TTS, etc.). `sedalib` is the Python package that runs them. It currently wraps sherpa-onnx for streaming speech recognition with the seda models on the Hugging Face Hub. Older models keep working with newer sedalib releases, for the options whose files they ship.
 
 ## Philosophy
 
@@ -21,6 +21,7 @@ uv sync --all-extras                                   # set up the environment
 uv run prek install                                    # install git hooks
 uv run prek run --all-files                            # lint and format, same as CI
 uv run python -m sedalib.demo.stt                      # Gradio demo
+uv run pytest                                          # tests; model tests need SEDA_TEST_MODEL
 uv run --group examples python examples/streaming.py   # microphone example
 ```
 
@@ -29,6 +30,6 @@ uv run --group examples python examples/streaming.py   # microphone example
 - Python >= 3.10, `src/` layout.
 - The version comes from git tags (hatch-vcs). Never hardcode it. Pushing a `v*` tag publishes to PyPI, and the release notes come from `CHANGELOG.md`.
 - Update `CHANGELOG.md` (Keep a Changelog) for user-facing changes.
-- No tests yet.
+- Tests live in `tests/`. Unit tests need no model; model tests run against each entry of `SEDA_TEST_MODEL` (local dirs or repo ids, comma-separated) and skip modes a model lacks. CI runs them after lint against the models listed in its workflow.
 - The README is in English and stays concise: no file-structure section and no `---` dividers.
 - Ask the maintainer to review before committing.

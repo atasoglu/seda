@@ -4,13 +4,11 @@ import builtins
 import math
 
 import pytest
+from conftest import DATA
 
-from sedalib import MODES, Recognizer, itn, read_wav
-from sedalib import stt
+from sedalib import MODES, Recognizer, itn, read_wav, stt
 from sedalib.formatter import Formatter
 from sedalib.vad import _Resampler
-
-from conftest import DATA
 
 
 def test_presets():
@@ -23,7 +21,13 @@ def test_presets():
 
 @pytest.mark.parametrize("kwargs", [{"mode": "slow"}, {"chunk": 48}])
 def test_invalid_options(kwargs):
-    args = {"mode": "balanced", "use_lm": None, "two_pass": None, "chunk": None, **kwargs}
+    args = {
+        "mode": "balanced",
+        "use_lm": None,
+        "two_pass": None,
+        "chunk": None,
+        **kwargs,
+    }
     with pytest.raises(ValueError):
         stt._resolve(args["mode"], args["use_lm"], args["two_pass"], args["chunk"])
 

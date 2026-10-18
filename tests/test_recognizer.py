@@ -4,10 +4,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from conftest import SPEECH_TEXT, supports
 
 from sedalib import MODES, Recognizer
-
-from conftest import SPEECH_TEXT, supports
 
 PIECE = 1600  # 100 ms at 16 kHz, like a microphone callback
 
