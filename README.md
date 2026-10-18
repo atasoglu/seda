@@ -1,4 +1,4 @@
-# seda
+![seda](https://raw.githubusercontent.com/atasoglu/seda/main/assets/banner.jpeg)
 
 [![PyPI](https://img.shields.io/pypi/v/sedalib)](https://pypi.org/project/sedalib/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -7,10 +7,6 @@
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-FFD21E)](https://huggingface.co/atasoglu/seda-v0.2)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-
-> *Bâki kalan bu kubbede bir hoş sadâ imiş...*
->
-> — Bâkî
 
 Lightweight, low-latency Turkish speech models for real-time applications.
 
