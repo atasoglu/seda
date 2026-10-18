@@ -44,10 +44,7 @@ class EndOfSpeech:
         self._speech = self._quiet = 0
         self._active = False
         self.ended = False
-        # Linear resampler state: input rate, position of the next output sample, last input sample.
-        self._rate = VAD_SAMPLE_RATE
-        self._position = 0.0
-        self._previous: list[float] = []
+        self._resample = _Resampler()
 
     def accept(self, samples: Sequence[float], sample_rate: int) -> None:
         self._buffer.extend(self._resample(samples, sample_rate))
@@ -66,8 +63,17 @@ class EndOfSpeech:
                     self._active = False
         del self._buffer[:consumed]
 
-    def _resample(self, samples: Sequence[float], sample_rate: int) -> array:
-        """To 16 kHz by linear interpolation: enough for a VAD, and no numpy needed."""
+
+class _Resampler:
+    """To 16 kHz by linear interpolation, across calls: enough for a VAD, and no numpy needed."""
+
+    def __init__(self):
+        # Input rate, position of the next output sample, last input sample.
+        self._rate = VAD_SAMPLE_RATE
+        self._position = 0.0
+        self._previous: list[float] = []
+
+    def __call__(self, samples: Sequence[float], sample_rate: int) -> array:
         if sample_rate == VAD_SAMPLE_RATE:
             return array("f", samples)
         if sample_rate != self._rate:

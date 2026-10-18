@@ -40,6 +40,7 @@ packages = ["src/sedalib"]
 [dependency-groups]
 dev = [
     "prek>=0.5.5",
+    "pytest>=9.1.1",
     "ruff>=0.16.10",
 ]
 examples = [

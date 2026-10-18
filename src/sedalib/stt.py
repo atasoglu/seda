@@ -197,9 +197,9 @@ class Stream:
         return self.cut().finalize()
 
     def reset(self) -> None:
-        """Clear the decoder state and drop the current utterance."""
+        """Drop the current utterance, including audio that is not decoded yet."""
         with self._lock:
-            self._recognizer.reset(self._stream)
+            self._stream = self._recognizer.create_stream()
             if self._final:
                 self._final.finish()
                 self._final = self._owner._final_pass()
@@ -218,7 +218,8 @@ class Stream:
         with self._lock:
             if self._vad:
                 return self._vad.ended
-            return self._recognizer.is_endpoint(self._stream)
+            # sherpa-onnx also reports a long silence before any speech (rule 1): not an utterance.
+            return self._recognizer.is_endpoint(self._stream) and bool(self.text)
 
     def __del__(self):
         final = getattr(self, "_final", None)
