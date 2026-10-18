@@ -19,6 +19,12 @@ dependencies = [
 [project.optional-dependencies]
 demo = [
     "gradio>=6.29.1",
+    "sedalib[format]",
+]
+format = [
+    "onnxruntime>=1.20 ; python_full_version >= '3.11'",
+    "onnxruntime>=1.20,<1.24 ; python_full_version < '3.11'",
+    "tokenizers>=0.20",
 ]
 
 [build-system]

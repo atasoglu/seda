@@ -25,11 +25,13 @@ def main() -> None:
                 partial = stream.accept(array("f", bytes(data)), SAMPLE_RATE)
                 print(f"\r{partial}", end="", flush=True)
                 if stream.is_endpoint:
-                    if partial:
-                        print()
-                    stream.reset()
+                    final = stream.end_utterance()
+                    print(
+                        f"\r\033[K{final}" if final else "\r\033[K",
+                        end="\n" if final else "",
+                    )
         except KeyboardInterrupt:
-            print(f"\r{stream.finish()}")
+            print(f"\r\033[K{stream.finish()}")
 
 
 if __name__ == "__main__":
