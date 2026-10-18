@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Without the VAD, a long silence before any speech no longer counts as an endpoint.
+- Without the VAD, a long silence before any speech no longer counts as an endpoint, and it no longer splits the utterance that follows.
 
 ### Compatibility
 

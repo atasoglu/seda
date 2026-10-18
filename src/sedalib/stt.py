@@ -218,8 +218,15 @@ class Stream:
         with self._lock:
             if self._vad:
                 return self._vad.ended
-            # sherpa-onnx also reports a long silence before any speech (rule 1): not an utterance.
-            return self._recognizer.is_endpoint(self._stream) and bool(self.text)
+            if not self._recognizer.is_endpoint(self._stream):
+                return False
+            if self.text:
+                return True
+            # A long silence before any speech (sherpa-onnx's rule 1) is not an utterance. Restart the
+            # endpoint counters, so idle time does not add up to the maximum utterance length (rule 3);
+            # this keeps audio that is not decoded yet, which may hold the start of the next words.
+            self._recognizer.reset(self._stream)
+            return False
 
     def __del__(self):
         final = getattr(self, "_final", None)

@@ -56,6 +56,21 @@ def test_two_utterances_split_at_endpoint(model_dir, speech, mode):
     assert texts == [SPEECH_TEXT, SPEECH_TEXT]
 
 
+@pytest.mark.parametrize("vad", [True, False])
+def test_long_silence_before_speech(model_dir, speech, vad):
+    """An idle microphone must not end, or split, the utterance that follows."""
+    if vad and not (model_dir / "vad/silero_vad.onnx").is_file():
+        pytest.skip("the model has no VAD")
+    stream = recognizer(model_dir, "balanced", vad=vad).stream()
+    samples = [0.0] * 16000 * 25 + speech[0] + [0.0] * 16000 * 3
+    texts = []
+    for i in range(0, len(samples), PIECE):
+        stream.accept(samples[i : i + PIECE])
+        if stream.is_endpoint:
+            texts.append(stream.end_utterance())
+    assert texts == [SPEECH_TEXT]
+
+
 def test_cut_and_finalize_in_another_thread(model_dir, speech):
     rec = recognizer(model_dir, "accurate")
     stream = rec.stream()
