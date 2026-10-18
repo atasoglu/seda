@@ -81,7 +81,7 @@ A single `Recognizer` can serve many streams at once, from different threads. Ca
 
 - **WER:** FLEURS-TR test.
 - **Final text after a pause:** median time from the end of speech, including the 0.25 s pause the VAD waits for.
-- **Speed:** RTF on one thread of an Intel Core 5 210H laptop CPU, including the second pass.
+- **Speed:** RTF on one thread of an Intel Core 5 210H CPU, including the second pass.
 
 The second pass of `accurate` runs in the background while the utterance is spoken, so most of its work is done when the speaker stops.
 
