@@ -3,6 +3,9 @@
 Usage: uv run python -m sedalib.demo.stt
        SEDA_MODEL=path/to/model_dir uv run python -m sedalib.demo.stt   # a local copy or another repo id
 
+The model is one of the inference options: the default (or SEDA_MODEL) and the other published seda
+models can be switched in the panel.
+
 Options take effect when Apply is pressed: the model is loaded and warmed up then, so the timings shown
 for recordings and files never include loading or first-run costs.
 """
@@ -21,10 +24,11 @@ import numpy as np
 from sedalib import CHUNKS, DEFAULT_REPO_ID, MODES, Formatter, Recognizer, download
 
 MODEL_ID = os.environ.get("SEDA_MODEL", DEFAULT_REPO_ID)
-LOCAL = Path(MODEL_ID).is_dir()
-MODEL_URL = None if LOCAL else f"https://huggingface.co/{MODEL_ID}"
+# The models offered in the panel: SEDA_MODEL (or the default) first.
+MODELS = list(dict.fromkeys([MODEL_ID, DEFAULT_REPO_ID, "atasoglu/seda-v0.2-tiny"]))
 MAX_THREADS = max(1, min(8, os.cpu_count() or 1))
 DEFAULT = {
+    "model": MODEL_ID,
     "use_lm": True,
     "two_pass": False,
     "chunk": 64,
@@ -42,7 +46,7 @@ _WARMUP_AUDIO = (np.random.default_rng(0).standard_normal(32000) * 0.01).astype(
 
 # Only the recognizer of the applied options stays loaded, so the memory figure is honest.
 _recognizers: dict[tuple, Recognizer] = {}
-_formatter: Formatter | None = None
+_formatters: dict[str, Formatter] = {}
 # Loading is serialized: two requests must not load the same model in parallel.
 _load_lock = threading.RLock()
 # Finished utterances are finalized (second pass, formatter) here, so live audio keeps flowing.
@@ -77,8 +81,26 @@ def release_memory() -> None:
         pass
 
 
+def is_local(model: str) -> bool:
+    return Path(model).is_dir()
+
+
+def model_link(model: str) -> str:
+    return (
+        f"`{model}`"
+        if is_local(model)
+        else f"[{model}](https://huggingface.co/{model})"
+    )
+
+
 def load_recognizer(
-    use_lm: bool, two_pass: bool, chunk: int, threads: int, vad: bool, pause: float
+    model: str,
+    use_lm: bool,
+    two_pass: bool,
+    chunk: int,
+    threads: int,
+    vad: bool,
+    pause: float,
 ) -> Recognizer:
     options = {
         "use_lm": use_lm,
@@ -88,14 +110,15 @@ def load_recognizer(
         "vad": vad,
         "endpoint_silence": pause,
     }
-    if LOCAL:
-        return Recognizer(MODEL_ID, **options)
-    return Recognizer.from_pretrained(MODEL_ID, **options)
+    if is_local(model):
+        return Recognizer(model, **options)
+    return Recognizer.from_pretrained(model, **options)
 
 
 def get_recognizer(o: dict) -> Recognizer:
     """The recognizer of the applied options o, loading it if needed."""
     key = (
+        o["model"],
         o["use_lm"],
         o["two_pass"],
         int(o["chunk"]),
@@ -112,29 +135,32 @@ def get_recognizer(o: dict) -> Recognizer:
         return _recognizers[key]
 
 
-def get_formatter() -> Formatter:
-    global _formatter
+def get_formatter(model: str) -> Formatter:
+    """The formatter shipped with the model (each model has its own)."""
     with _load_lock:
-        if _formatter is None:
+        if model not in _formatters:
+            _formatters.clear()
             root = (
-                Path(MODEL_ID) if LOCAL else download(MODEL_ID, files=["formatter/*"])
+                Path(model)
+                if is_local(model)
+                else download(model, files=["formatter/*"])
             )
-            _formatter = Formatter(root / "formatter")
-        return _formatter
+            _formatters[model] = Formatter(root / "formatter")
+        return _formatters[model]
 
 
-def warm_up(recognizer: Recognizer, punctuate: bool) -> None:
+def warm_up(recognizer: Recognizer, model: str, punctuate: bool) -> None:
     """Run the streaming pass, the second pass (if any) and the formatter once."""
     stream = recognizer.stream()
     for i in range(0, len(_WARMUP_AUDIO), 1600):
         stream.accept(_WARMUP_AUDIO[i : i + 1600])
     stream.finish()
     if punctuate:
-        get_formatter()("bugün hava çok güzel yarın ne olacak")
+        get_formatter(model)("bugün hava çok güzel yarın ne olacak")
 
 
-def finalize(text: str, punctuate: bool) -> str:
-    return get_formatter()(text) if punctuate and text else text
+def finalize(text: str, model: str, punctuate: bool) -> str:
+    return get_formatter(model)(text) if punctuate and text else text
 
 
 def to_mono_float(audio: tuple[int, np.ndarray]) -> tuple[np.ndarray, int]:
@@ -159,6 +185,7 @@ def fmt_rss() -> str:
 def describe(o: dict) -> str:
     threads = int(o["threads"])
     parts = [
+        o["model"].rsplit("/", 1)[-1],
         "beam search + LM" if o["use_lm"] else "greedy search",
         f"{int(o['chunk']) * 0.02:.2f} s chunks",
         "two-pass" if o["two_pass"] else "single pass",
@@ -169,8 +196,9 @@ def describe(o: dict) -> str:
     return " · ".join(parts)
 
 
-def as_options(use_lm, two_pass, chunk, punctuate, threads, vad, pause) -> dict:
+def as_options(model, use_lm, two_pass, chunk, punctuate, threads, vad, pause) -> dict:
     return {
+        "model": model,
         "use_lm": bool(use_lm),
         "two_pass": bool(two_pass),
         "chunk": int(chunk),
@@ -214,12 +242,16 @@ def apply_options(*values):
     o = as_options(*values)
     yield gr.skip(), "**Loading and warming up…**", gr.update(interactive=False)
     start = time.perf_counter()
-    recognizer = get_recognizer(o)
-    if o["punctuate"]:
-        get_formatter()
+    try:
+        recognizer = get_recognizer(o)
+        if o["punctuate"]:
+            get_formatter(o["model"])
+    except OSError as e:  # files the model does not ship (a chunk size, the formatter), or no download
+        yield gr.skip(), f"**Not applied:** {e}", gr.update(interactive=True)
+        return
     load = time.perf_counter() - start
     start = time.perf_counter()
-    warm_up(recognizer, o["punctuate"])
+    warm_up(recognizer, o["model"], o["punctuate"])
     warm = time.perf_counter() - start
     yield o, applied_status(o, load, warm), gr.update(interactive=False)
 
@@ -232,6 +264,7 @@ def new_state(o: dict) -> dict:
     return {
         "stream": recognizer.stream(),
         "options": o,
+        "model": o["model"],
         "punctuate": o["punctuate"],
         "pending": [],
         "done": [],
@@ -280,7 +313,7 @@ def transcript(state: dict, partial: str = "") -> str:
 
 def live_text(state: dict, text: str) -> str:
     """Partial text, formatted on the fly when the formatter is on (it takes a few ms)."""
-    return finalize(text, state["punctuate"])
+    return finalize(text, state["model"], state["punctuate"])
 
 
 def end_utterance(state: dict, finish: bool = False) -> None:
@@ -298,7 +331,7 @@ def end_utterance(state: dict, finish: bool = False) -> None:
 
     def work():
         text = stream.finish() if cut is None else cut.finalize()
-        utterance["final"] = finalize(text, state["punctuate"])
+        utterance["final"] = finalize(text, state["model"], state["punctuate"])
         state["finals"].append(time.perf_counter() - start)
 
     state["pending"].append(_finalizer.submit(work))
@@ -374,7 +407,7 @@ def transcribe(audio, applied: dict):
     start = time.perf_counter()
     raw = recognizer.transcribe(samples, sample_rate)
     asr = time.perf_counter() - start
-    text = finalize(raw, applied["punctuate"])
+    text = finalize(raw, applied["model"], applied["punctuate"])
     total = time.perf_counter() - start
     stats = (
         f"{describe(applied)}  \n"
@@ -396,7 +429,7 @@ def compare(audio, applied: dict):
     threads = int(applied["threads"])
     form = "formatted" if applied["punctuate"] else "spoken form"
     note = (
-        f"Audio {duration:.1f} s · {threads} thread(s) · {form} · "
+        f"{model_link(applied['model'])} · Audio {duration:.1f} s · {threads} thread(s) · {form} · "
         "every preset is warmed up before it is timed."
     )
     head = [
@@ -410,12 +443,20 @@ def compare(audio, applied: dict):
         yield "\n".join([*head, *rows, f"| {mode} | loading… | | |"])
         with _load_lock:
             recognizer = load_recognizer(
-                use_lm, two_pass, chunk, threads, applied["vad"], applied["pause"]
+                applied["model"],
+                use_lm,
+                two_pass,
+                chunk,
+                threads,
+                applied["vad"],
+                applied["pause"],
             )
-        warm_up(recognizer, applied["punctuate"])
+        warm_up(recognizer, applied["model"], applied["punctuate"])
         start = time.perf_counter()
         text = finalize(
-            recognizer.transcribe(samples, sample_rate), applied["punctuate"]
+            recognizer.transcribe(samples, sample_rate),
+            applied["model"],
+            applied["punctuate"],
         )
         took = time.perf_counter() - start
         del recognizer
@@ -429,17 +470,24 @@ def compare(audio, applied: dict):
 
 def build() -> gr.Blocks:
     t0 = time.perf_counter()
-    warm_up(get_recognizer(DEFAULT), DEFAULT["punctuate"])
+    warm_up(get_recognizer(DEFAULT), MODEL_ID, DEFAULT["punctuate"])
     startup = time.perf_counter() - t0
-    source = f"`{MODEL_ID}`" if LOCAL else f"[{MODEL_ID}]({MODEL_URL})"
     with gr.Blocks(title="Seda STT") as demo:
         gr.Markdown(
-            f"# Seda STT\nStreaming Turkish speech recognition on CPU with {source}."
+            "# Seda STT\nStreaming Turkish speech recognition on CPU with "
+            + ", ".join(model_link(m) for m in MODELS)
+            + "."
         )
         applied = gr.State(dict(DEFAULT))
 
         with gr.Sidebar(open=True):
             gr.Markdown("## Inference options")
+            model = gr.Radio(
+                [(m.rsplit("/", 1)[-1], m) for m in MODELS],
+                value=DEFAULT["model"],
+                label="Model",
+                info="seda-v0.2-tiny: 15× smaller, for slow CPUs and phones; less accurate.",
+            )
             preset = gr.Radio(
                 [
                     ("fast: greedy search, 0.64 s chunks", "fast"),
@@ -467,7 +515,9 @@ def build() -> gr.Blocks:
                 [(f"{c * 0.02:.2f} s", c) for c in sorted(CHUNKS)],
                 value=DEFAULT["chunk"],
                 label="Streaming chunk",
-                info="Shorter: partial text updates twice as often, slightly less accurate.",
+                info="Shorter: partial text updates sooner, slightly less accurate. "
+                "0.16 and 0.32 s are for greedy search on slow devices; not every model "
+                "ships them.",
             )
             punctuate = gr.Checkbox(
                 value=DEFAULT["punctuate"],
@@ -506,7 +556,7 @@ def build() -> gr.Blocks:
                 "Apply loads the model for the chosen options and runs it once on a short "
                 "sample (warm-up), so recordings and files are timed without loading costs."
             )
-        options = [use_lm, two_pass, chunk, punctuate, threads, vad, pause]
+        options = [model, use_lm, two_pass, chunk, punctuate, threads, vad, pause]
         preset.change(apply_preset, preset, [use_lm, two_pass, chunk])
         for option in options:
             option.change(

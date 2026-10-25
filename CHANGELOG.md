@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-25
+
+### Added
+
+- Support for the new [seda-v0.2-tiny](https://huggingface.co/atasoglu/seda-v0.2-tiny) model: 4.5M parameters (seda-v0.2: 66M), distilled from seda-v0.2 for slow CPUs, phones and the browser. 10.51 WER on FLEURS-TR test in the `accurate` mode, 11.24 in `balanced` (Whisper small: 11.87). All modes work with it.
+- `chunk=8` and `chunk=16`: 0.16 and 0.32 s streaming steps, for the lowest latency. seda-v0.2 and seda-v0.2-tiny ship them.
+- The demo can switch between seda-v0.2 and seda-v0.2-tiny in the options panel. Options a model does not support are reported instead of applied.
+
+### Changed
+
+- Model tests allow one word error in the transcript (the tiny model's greedy search), and compare the other checks with the model's own transcript.
+
 ## [1.0.0] - 2026-10-18
 
 ### Added

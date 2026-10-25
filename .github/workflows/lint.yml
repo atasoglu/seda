@@ -34,7 +34,7 @@ jobs:
         python: [ "3.10", "3.13" ]
     env:
       # Tests that need a model run against each of these (see tests/conftest.py).
-      SEDA_TEST_MODEL: atasoglu/seda-v0.2,atasoglu/seda-v0.1
+      SEDA_TEST_MODEL: atasoglu/seda-v0.2,atasoglu/seda-v0.2-tiny,atasoglu/seda-v0.1
 
     steps:
     - uses: actions/checkout@v4
