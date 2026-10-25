@@ -17,9 +17,10 @@ Seda aims to provide models that are small enough to run on a CPU, fast enough f
 | Model | Task | Architecture | Params | FLEURS-TR test WER |
 | --- | --- | --- | --- | --- |
 | [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2) | Streaming STT | Zipformer2 transducer + second pass | 66.1M | 6.38 (`accurate`), 7.26 (`balanced`) |
+| [seda-v0.2-tiny](https://huggingface.co/atasoglu/seda-v0.2-tiny) | Streaming STT | Zipformer2 transducer + second pass | 4.5M | 10.51 (`accurate`), 11.24 (`balanced`) |
 | [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) | Streaming STT | Zipformer2 transducer | 66.1M | 11.60 |
 
-For comparison, Whisper medium scores 6.62 and Whisper large-v3 4.62 on the same set. See the [model card](https://huggingface.co/atasoglu/seda-v0.2) for noisy, telephone and broadcast audio.
+For comparison, Whisper small scores 11.87, Whisper medium 6.62 and Whisper large-v3 4.62 on the same set. See the [seda-v0.2 card](https://huggingface.co/atasoglu/seda-v0.2) for noisy, telephone and broadcast audio. seda-v0.2-tiny is distilled from seda-v0.2 for slow CPUs, phones and the browser: its acoustic model is 7 MB, and it runs every mode with the same options (`Recognizer.from_pretrained("atasoglu/seda-v0.2-tiny")`).
 
 ## Installation
 
@@ -90,7 +91,7 @@ Recognizer.from_pretrained(
     mode="balanced",  # "fast", "balanced" or "accurate"
     use_lm=None,  # override the mode: rescore with the language model
     two_pass=None,  # override the mode: decode each utterance again for the final text
-    chunk=None,  # override the mode: 32 or 64 frames (0.64 or 1.28 s per streaming step)
+    chunk=None,  # override the mode: 8, 16, 32 or 64 frames (0.16 to 1.28 s per streaming step)
     punctuate=False,  # digits, punctuation, casing and apostrophes in final texts (needs [format])
     num_threads=1,  # CPU threads per model
     vad=None,  # Silero VAD for the end of speech (default: if the model ships it)
@@ -103,7 +104,8 @@ Recognizer.from_pretrained(
 - **Faster end of speech:** a shorter pause gives the final text sooner, but splits sentences more often at short hesitations. With 0.15 s, the final text arrives after about 0.22 s (`fast`) and 0.27 s (`balanced`).
 - **Threads:** `num_threads=2` makes `fast` and `balanced` about 15% faster. More threads do not help a single stream. To serve many users, give each stream one thread and run them in parallel: one recognizer scales to about 4× the throughput on 8 cores.
 - **Formatter:** `punctuate=True` writes "Bugün Ankara'da hava 24 derece" instead of "bugün ankarada hava yirmi dört derece". `sedalib.itn` converts only the numbers and needs no extra.
-- **seda-v0.1:** works with the `balanced` mode, with or without `use_lm`, and ends utterances with the 1.2 s silence rule. It does not have the files for `fast`, `accurate`, the VAD or the formatter.
+- **Short chunks:** `chunk=8` or `16` react sooner (0.16 or 0.32 s steps) but cost more CPU per second of audio and are a little less accurate. On slow devices, prefer `chunk=16` with greedy search or the default 0.64 s.
+- **seda-v0.1:** works with the `balanced` mode, with or without `use_lm`, and ends utterances with the 1.2 s silence rule. It does not have the files for `fast`, `accurate`, the short chunks, the VAD or the formatter.
 
 ## Demo
 
@@ -120,9 +122,9 @@ python -m sedalib.demo.stt
 uv sync --all-extras
 uv run prek install  # ruff lint and format hooks
 uv run pytest  # tests that need a model are skipped
-SEDA_TEST_MODEL=atasoglu/seda-v0.2,atasoglu/seda-v0.1 uv run pytest  # with models
+SEDA_TEST_MODEL=atasoglu/seda-v0.2,atasoglu/seda-v0.2-tiny,atasoglu/seda-v0.1 uv run pytest  # with models
 ```
 
 ## License
 
-The code is released under Apache-2.0. The seda-v0.2 model files are CC BY-SA 4.0, because parts of their training data are share-alike: Khan Academy for the acoustic model, and Wikipedia for the language model and the formatter. The Silero VAD file shipped with the model is MIT. Commercial use is allowed under these terms; see the model cards for details.
+The code is released under Apache-2.0. The seda-v0.2 and seda-v0.2-tiny model files are CC BY-SA 4.0, because parts of their training data are share-alike: Khan Academy for the acoustic model, and Wikipedia for the language model and the formatter. The Silero VAD file shipped with the model is MIT. Commercial use is allowed under these terms; see the model cards for details.

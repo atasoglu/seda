@@ -25,8 +25,9 @@ MODES = {
     "accurate": (True, True, 32),
 }
 # Streaming exports of the same weights: chunk frames (10 ms each, before 2x subsampling) -> subdir.
-# The 1.28 s model sits at the repo root, where sedalib 0.2 looks for it.
-CHUNKS = {64: "", 32: "c32"}
+# The 1.28 s model sits at the repo root, where sedalib 0.2 looks for it. 0.16 and 0.32 s react fastest
+# and suit slow devices with greedy search; not every model ships them.
+CHUNKS = {64: "", 32: "c32", 16: "c16", 8: "c8"}
 _STREAMING_FILES = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx"]
 _LM_FILES = ["lm/rnnlm.int8.onnx", "lm/2gram.fst"]
 _FINAL_FILES = [
@@ -39,7 +40,7 @@ _FORMATTER_FILES = ["formatter/formatter.int8.onnx", "formatter/tokenizer.json"]
 _VAD_FILE = "vad/silero_vad.onnx"
 # Silence appended to flush the end of an utterance (finish(), end_utterance()): a chunk is decoded
 # only once it is full, so the padding covers one chunk plus the encoder's right context (~0.14 s).
-_TAIL_PADDING_SECONDS = {64: 1.5, 32: 0.9}
+_TAIL_PADDING_SECONDS = {64: 1.5, 32: 0.9, 16: 0.6, 8: 0.5}
 # Pause after speech, in seconds, that makes is_endpoint true: with the VAD, which decides every
 # ~36 ms; without it, sherpa-onnx's rule 2, which is checked once per decoded chunk.
 _ENDPOINT_SILENCE = {True: 0.25, False: 1.2}
@@ -262,7 +263,7 @@ class Recognizer:
     """Streaming Turkish speech recognizer.
 
     ``mode`` picks a preset: "fast", "balanced" (default) or "accurate". ``use_lm``, ``two_pass`` and
-    ``chunk`` (32 or 64 frames: 0.64 or 1.28 s of audio per streaming step) override the preset's
+    ``chunk`` (8, 16, 32 or 64 frames: 0.16, 0.32, 0.64 or 1.28 s of audio per streaming step) override the preset's
     choice, and ``punctuate`` adds digits, punctuation and casing to final texts (needs the ``format``
     extra).
 
