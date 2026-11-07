@@ -6,6 +6,8 @@ from collections.abc import Sequence
 import sherpa_onnx
 
 VAD_SAMPLE_RATE = 16000
+# About one window: the shortest hangover sherpa-onnx's Silero model takes.
+_MODEL_HANGOVER_SECONDS = 0.03
 
 
 class EndOfSpeech:
@@ -26,7 +28,11 @@ class EndOfSpeech:
         self._model = sherpa_onnx.VadModel.create(
             sherpa_onnx.VadModelConfig(
                 silero_vad=sherpa_onnx.SileroVadModelConfig(
-                    model=model, threshold=threshold
+                    model=model,
+                    threshold=threshold,
+                    # sherpa-onnx's own hangover (default 0.5 s) would come on top of ``silence``,
+                    # which counts the pause here.
+                    min_silence_duration=_MODEL_HANGOVER_SECONDS,
                 ),
                 sample_rate=VAD_SAMPLE_RATE,
                 num_threads=1,
@@ -34,9 +40,19 @@ class EndOfSpeech:
         )
         self._window = self._model.window_size()
         seconds = self._window / VAD_SAMPLE_RATE
+        self._seconds = seconds
         self._need_speech = max(1, round(min_speech / seconds))
-        self._need_silence = max(1, round(silence / seconds))
+        self.silence = silence
         self.reset()
+
+    @property
+    def silence(self) -> float:
+        """Pause, in seconds, that ends an utterance; may be changed at any time."""
+        return self._need_silence * self._seconds
+
+    @silence.setter
+    def silence(self, seconds: float) -> None:
+        self._need_silence = max(1, round(seconds / self._seconds))
 
     def reset(self) -> None:
         self._model.reset()

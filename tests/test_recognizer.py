@@ -65,7 +65,8 @@ def test_two_utterances_split_at_endpoint(model_dir, speech, mode):
         if stream.is_endpoint:
             texts.append(stream.end_utterance())
     texts.append(stream.end_utterance())
-    assert texts == [rec.transcribe(*speech)] * 2
+    # The quiet tail of the second speech may end it with an endpoint too: nothing is left then.
+    assert [t for t in texts if t] == [rec.transcribe(*speech)] * 2
 
 
 @pytest.mark.parametrize("vad", [True, False])
@@ -191,3 +192,26 @@ def test_keywords_in_file_and_stream(model_dir, speech, mode):
     live += stream.finish()
     starts = [d.start for d in live if d.keyword == "çocuklu aileler"]
     assert len(starts) == 2 and starts[1] > len(samples) / rate + 1 > starts[0]
+
+
+def test_endpoint_silence_can_change_while_streaming(model_dir, speech):
+    """The speech has a pause of about 0.4 s: a shorter limit splits it, a longer one does not."""
+    if not (model_dir / "vad/silero_vad.onnx").is_file():
+        pytest.skip("the model has no VAD")
+    rec = recognizer(model_dir, "fast")
+    samples = speech[0] + [0.0] * 16000 * 2
+
+    def endpoints(silence):
+        stream = rec.stream()
+        stream.endpoint_silence = silence
+        assert abs(stream.endpoint_silence - silence) < 0.04
+        found = 0
+        for i in range(0, len(samples), PIECE):
+            stream.accept(samples[i : i + PIECE])
+            if stream.is_endpoint:
+                found += 1
+                stream.cut()
+        return found
+
+    assert endpoints(0.2) == 2
+    assert endpoints(1.0) == 1

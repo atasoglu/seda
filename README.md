@@ -62,7 +62,7 @@ for chunk in microphone_chunks():  # e.g. 100 ms of audio at a time
         print("final:", stream.end_utterance())
 ```
 
-The end of speech is detected by Silero VAD after a 0.25 s pause (`endpoint_silence`). If your application already knows that the speaker stopped, for example with a push-to-talk button, call `end_utterance()` right away.
+The end of speech is detected by Silero VAD after a 0.75 s pause (`endpoint_silence`). A shorter pause gives the final text sooner but splits slow speech; a `Stream` can change it while it runs, e.g. `stream.endpoint_silence = 0.3`. If your application already knows that the speaker stopped, for example with a push-to-talk button, call `end_utterance()` right away.
 
 To keep accepting audio while the final text is computed, split the two steps: `stream.cut()` ends the utterance and returns it, and `utterance.finalize()` can run in another thread.
 
@@ -103,7 +103,7 @@ Every word of a transcript is available too: `recognizer.transcribe_words(sample
 | `accurate` | 0.64 s chunks, greedy | second pass with full context, beam search + LM | 6.38 | 0.77 s | 0.137 |
 
 - **WER:** FLEURS-TR test.
-- **Final text after a pause:** median time from the end of speech, including the 0.25 s pause the VAD waits for.
+- **Final text after a pause:** median time from the end of speech, including the pause the VAD waits for: measured with `endpoint_silence=0.25` (the default pause is 0.75 s).
 - **Speed:** RTF on one thread of an Intel Core 5 210H CPU, including the second pass.
 
 The second pass of `accurate` runs in the background while the utterance is spoken, so most of its work is done when the speaker stops.
@@ -121,7 +121,7 @@ Recognizer.from_pretrained(
     punctuate=False,  # digits, punctuation, casing and apostrophes in final texts (needs [format])
     num_threads=1,  # CPU threads per model
     vad=None,  # Silero VAD for the end of speech (default: if the model ships it)
-    endpoint_silence=None,  # pause that ends an utterance, in s (default 0.25 with the VAD, 1.2 without)
+    endpoint_silence=None,  # pause that ends an utterance, in s (default 0.75 with the VAD, 1.2 without)
 )
 ```
 

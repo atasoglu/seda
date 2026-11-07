@@ -20,6 +20,7 @@ from the moment it is added: words said before that are not matched.
 
 import html
 import os
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -35,25 +36,46 @@ MODEL_ID = os.environ.get("SEDA_MODEL", "atasoglu/seda-v0.2-tiny")
 CHUNK = int(os.environ.get("SEDA_CHUNK", "8"))
 # Demo mode -> sedalib mode, whose chunk is overridden with CHUNK.
 MODES = {"Low latency": "fast", "High accuracy": "balanced"}
-# Pause that ends an utterance and gives the final match. Shorter than the library default (0.25 s):
-# splitting a sentence at a hesitation costs little here.
-ENDPOINT_SILENCE = float(os.environ.get("SEDA_ENDPOINT_SILENCE", "0.15"))
+# Pause that ends an utterance and gives the final match; the slider changes it while recording.
+# Shorter pauses give the final match sooner but split a phrase spoken slowly.
+ENDPOINT_SILENCE = float(os.environ.get("SEDA_ENDPOINT_SILENCE", "0.25"))
 # Audio is sent by the browser in pieces of this many seconds.
-PACKET_SECONDS = 0.1
+PACKET_SECONDS = float(os.environ.get("SEDA_PACKET_SECONDS", "0.05"))
 EXAMPLE_KEYWORDS = ["deneme", "bir", "iki", "üç"]
 
 CSS = """
 /* Centered page, the mode on the left and everything else on the right; stacked on narrow screens. */
-.gradio-container { max-width: 1080px !important; margin: 0 auto !important; }
-#kw-settings { gap: 0.75rem; }
+.gradio-container { max-width: 1400px !important; margin: 0 auto !important; }
+/* The main column sits in the middle of the page and the settings to its left. */
+#kw-layout { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(320px, 760px) minmax(0, 1fr);
+  gap: 1.5rem; align-items: start; }
+#kw-main { grid-column: 2; grid-row: 1; min-width: 0 !important; }
+#kw-settings { grid-column: 1; grid-row: 1; justify-self: end; width: 100%; max-width: 280px;
+  min-width: 0 !important; gap: 0.75rem; }
+/* The title lines up with the main column. */
+#title, #kw-modelline { max-width: 760px; margin: 0 auto !important; width: 100%; }
+#kw-modelline, #kw-modelline > * { padding: 0 !important; }
+#kw-modelline { margin-top: -0.9rem !important; }
+@media (max-width: 1280px) { #kw-layout { grid-template-columns: minmax(0, 1fr); }
+  #title, #kw-modelline { max-width: none; }
+  #kw-main, #kw-settings { grid-column: 1; max-width: none; justify-self: stretch; }
+  #kw-settings { grid-row: 1; } #kw-main { grid-row: 2; } }
 #kw-settings .kw-panel-title, #kw-main .kw-panel-title { font-size: 0.75rem; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--body-text-color-subdued); }
 #title h1 { font-size: 1.6rem; font-weight: 600; margin: 0; }
 .kw-model { font-size: 0.85rem; color: var(--body-text-color-subdued); }
 #title p { color: var(--body-text-color-subdued); margin: 0.25rem 0 0; }
-.kw-live { display: flex; gap: 0.75rem; align-items: baseline; min-height: 1.5rem; }
-.kw-clock { font-variant-numeric: tabular-nums; font-weight: 600; flex: none; }
-.kw-clock.on::before { content: "●"; color: #e5484d; margin-right: 0.35rem; font-size: 0.8em; }
+.kw-live { display: flex; gap: 0.6rem; align-items: center; min-height: 1.4rem; font-size: 0.85rem; }
+.kw-clock { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; padding: 0.15rem 0.6rem;
+  border-radius: 1rem; border: 1px solid var(--border-color-primary); font-variant-numeric: tabular-nums;
+  color: var(--body-text-color-subdued); }
+.kw-clock::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%;
+  background: var(--border-color-primary); }
+.kw-clock.on { color: var(--body-text-color); }
+.kw-clock.on::before { background: #e5484d; animation: kw-pulse 1.2s ease-in-out infinite; }
+@keyframes kw-pulse { 50% { opacity: 0.35; } }
+.kw-model a { display: inline; padding: 0; margin: 0; }
+.kw-rtf { flex: none; color: var(--body-text-color-subdued); font-variant-numeric: tabular-nums; }
 .kw-partial { color: var(--body-text-color-subdued); font-style: italic; overflow-wrap: anywhere; }
 .kw-pending { opacity: 0.5; border-style: dashed; }
 .kw-empty { color: var(--body-text-color-subdued); padding: 1.5rem 0; text-align: center; }
@@ -68,8 +90,9 @@ CSS = """
 .kw-heard { color: var(--body-text-color-subdued); font-weight: 400; margin-left: 0.4rem; }
 .kw-time { color: var(--body-text-color-subdued); font-size: 0.85rem; margin-left: 0.4rem;
   font-variant-numeric: tabular-nums; }
-.kw-legend { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.8rem;
-  color: var(--body-text-color-subdued); margin-bottom: 0.25rem; }
+.kw-legend { font-size: 0.8rem; margin: 0.25rem 0 0; padding-left: 1.1rem; list-style: disc;
+  color: var(--body-text-color-subdued); }
+.kw-legend li { margin-bottom: 0.2rem; }
 .kw-legend b { color: var(--body-text-color); font-weight: 600; margin-right: 0.25rem; }
 .kw-meta span[title] { cursor: help; }
 .kw-meta { color: var(--body-text-color-subdued); font-size: 0.8rem; margin-top: 0.15rem;
@@ -112,10 +135,16 @@ def model_info(name: str) -> str:
         if r._calibration
         else "no calibration for this setup: confidence –"
     )
+    name = html.escape(Path(MODEL_ID).name)
+    if not Path(MODEL_ID).is_dir():  # a Hub repo id: link to its page
+        name = (
+            f"<a href='https://huggingface.co/{html.escape(MODEL_ID)}' target='_blank' "
+            f"rel='noopener'>{name}</a>"
+        )
     return (
-        f"<div class='kw-model'>Model <b>{html.escape(Path(MODEL_ID).name)}</b> · "
-        f"{r.chunk * 0.02:.2f} s steps, {search}{final} · end of speech after "
-        f"{r.endpoint_silence:.2f} s · {confidence}</div>"
+        f"<div class='kw-model'>Model <b>{name}</b> · "
+        f"{r.chunk * 0.02:.2f} s steps, {search}{final} · "
+        f"{confidence}</div>"
     )
 
 
@@ -132,11 +161,20 @@ def valid(keywords: list[str] | None) -> list[str]:
     return [k for k in keywords or [] if any(c.isalnum() for c in k)]
 
 
-def clock(seconds: float, recording: bool, text: str = "") -> str:
+def clock(
+    seconds: float, recording: bool, text: str = "", speed: float | None = None
+) -> str:
     m, s = divmod(seconds, 60)
     on = " on" if recording else ""
+    if not recording and not seconds:
+        text = text or "Press record and speak"
+    rate = (
+        f'<span class="kw-rtf" title="{METRICS["RTF"]}">RTF {speed:.3f}</span>'
+        if speed is not None
+        else ""
+    )
     return (
-        f'<div class="kw-live"><span class="kw-clock{on}">{int(m)}:{s:04.1f}</span>'
+        f'<div class="kw-live"><span class="kw-clock{on}">{int(m)}:{s:04.1f}</span>{rate}'
         f'<span class="kw-partial">{html.escape(text)}</span></div>'
     )
 
@@ -169,27 +207,52 @@ METRICS = {
     "shown": "seconds after the keyword ended that it appeared, greyed out",
     "final": "seconds after the keyword ended that it got its confidence: in Low latency when the"
     " next word starts or when you pause, whichever comes first; in High accuracy when you pause",
+    "RTF": "real-time factor: the server's compute time divided by the audio time, from the start of"
+    " the keyword until it was final; below 1 is faster than real time. It leaves out the network"
+    " and the browser",
+}
+# The short form of METRICS for the legend; the full text is on hover.
+LEGEND_ITEMS = {
+    "long": "how long it was spoken",
+    "shown": "when it appeared, after it ended",
+    "final": "when it got its confidence, after it ended",
+    "RTF": "compute time ÷ audio time",
+    "Pause": "shorter is faster, but splits slow phrases",
 }
 LEGEND = (
-    '<div class="kw-legend">'
-    + "".join(f"<span><b>{name}</b> {text}</span>" for name, text in METRICS.items())
-    + "<span>Times count audio received by the server; the 0:12.3 next to a keyword is when it "
-    "was said in the recording.</span></div>"
+    '<div class="kw-panel-title">Reading the matches</div><ul class="kw-legend">'
+    + "".join(f"<li><b>{name}</b> {text}</li>" for name, text in LEGEND_ITEMS.items())
+    + "</ul>"
 )
 
 
-def metrics(d, seen: float | None, final: float | None) -> str:
+def rtf(state: dict, start: float, end: float) -> float | None:
+    """Compute time divided by audio time over the audio packets in [start, end] seconds."""
+    packets = [p for p in state.get("packets", []) if start < p[0] <= end]
+    audio = sum(p[1] for p in packets)
+    return sum(p[2] for p in packets) / audio if audio else None
+
+
+def metrics(
+    d, seen: float | None, final: float | None, speed: float | None = None
+) -> str:
     parts = [("long", f"{d.end - d.start:.2f} s long")]
     if seen is not None:
         parts.append(("shown", f"shown {seen - d.end:+.2f} s"))
     if final is not None:
         parts.append(("final", f"final {final - d.end:+.2f} s"))
+    if speed is not None:
+        parts.append(("RTF", f"RTF {speed:.3f}"))
     spans = (f'<span title="{METRICS[name]}">{text}</span>' for name, text in parts)
     return f'<div class="kw-meta">{" · ".join(spans)}</div>'
 
 
 def row(
-    d, pending: bool = False, seen: float | None = None, final: float | None = None
+    d,
+    pending: bool = False,
+    seen: float | None = None,
+    final: float | None = None,
+    speed: float | None = None,
 ) -> str:
     heard = (
         f'<span class="kw-heard">“{html.escape(d.text)}”</span>'
@@ -206,7 +269,7 @@ def row(
     return (
         f'<div class="{css}"><div><span class="kw-word">{html.escape(d.keyword)}</span>'
         f'{heard}<span class="kw-time">{int(m)}:{s:04.1f}</span>'
-        f"{metrics(d, seen, final)}</div>"
+        f"{metrics(d, seen, final, speed)}</div>"
         f'<div class="kw-bar"><div style="width:{conf * 100:.0f}%"></div></div>'
         f'<div class="kw-conf">{label}</div></div>'
     )
@@ -243,12 +306,26 @@ def render(
         final = when(state, "final", d)
         if not counts(d) or (final is not None and d.confidence < min_confidence):
             continue
+        speed = None if final is None else rtf(state, d.start, final)
         rows.append(
-            row(d, pending=final is None, seen=first_seen(state, d), final=final)
+            row(
+                d,
+                pending=final is None,
+                seen=first_seen(state, d),
+                final=final,
+                speed=speed,
+            )
         )
     for d, cut in reversed(found):
         final = min(cut, when(state, "final", d) or cut)
-        rows.append(row(d, seen=first_seen(state, d), final=final))
+        rows.append(
+            row(
+                d,
+                seen=first_seen(state, d),
+                final=final,
+                speed=rtf(state, d.start, final),
+            )
+        )
     if not rows:
         listening = state and not state["stopped"]
         return f'<div class="kw-empty">{"Listening…" if listening else "No matches yet."}</div>'
@@ -265,9 +342,11 @@ def on_keywords(state, keywords, min_confidence):
     return state, render(state, keywords, min_confidence)
 
 
-def start(mode, keywords, min_confidence):
+def start(mode, keywords, min_confidence, pause):
+    stream = RECOGNIZERS[mode].stream()
+    set_pause(stream, pause)
     state = {
-        "stream": RECOGNIZERS[mode].stream(),
+        "stream": stream,
         "utterances": [],
         "pending": [],
         "seen": [],  # (keyword, start, seconds of audio when first shown)
@@ -276,17 +355,30 @@ def start(mode, keywords, min_confidence):
         "added": {k: 0.0 for k in valid(keywords)},
         "stopped": False,
         "html": "",
+        # (seconds of audio accepted, seconds of audio in the packet, seconds it took to process),
+        # for the RTF; with the total of the last two.
+        "packets": [],
+        "audio": 0.0,
+        "compute": 0.0,
     }
     state["html"] = render(state, keywords, min_confidence)
     # The mode is fixed while recording.
     return state, state["html"], clock(0.0, True), gr.update(interactive=False)
 
 
-def on_audio(state, audio, keywords, min_confidence):
+def set_pause(stream, pause: float) -> None:
+    """The pause that ends an utterance; models without the VAD keep their own."""
+    if stream._vad and abs(stream.endpoint_silence - pause) > 1e-6:
+        stream.endpoint_silence = pause
+
+
+def on_audio(state, audio, keywords, min_confidence, pause):
     if state is None or state["stopped"] or audio is None:
         return state, gr.skip(), gr.skip()
     stream = state["stream"]
+    set_pause(stream, pause)
     samples, sample_rate = to_mono_float(audio)
+    began = time.perf_counter()
     partial = stream.accept(samples, sample_rate)
     if stream.is_endpoint:
         state["utterances"].append((stream.cut().words, stream._seconds))
@@ -303,13 +395,23 @@ def on_audio(state, audio, keywords, min_confidence):
                 # The next word has started: the keyword's words are final.
                 if early and d.end <= last.start and when(state, "final", d) is None:
                     state["final"].append((d.keyword, d.start, stream._seconds))
+    took = time.perf_counter() - began
+    seconds = len(samples) / sample_rate
+    state["packets"].append((stream._seconds, seconds, took))
+    state["audio"] += seconds
+    state["compute"] += took
     results = render(state, keywords, min_confidence)
     changed = results != state["html"]
     state["html"] = results
     return (
         state,
         results if changed else gr.skip(),
-        clock(stream._seconds, True, partial),
+        clock(
+            stream._seconds,
+            True,
+            partial,
+            state["compute"] / state["audio"] if state["audio"] else None,
+        ),
     )
 
 
@@ -323,7 +425,7 @@ def stop(state, keywords, min_confidence):
     return (
         state,
         state["html"],
-        clock(stream._seconds, False),
+        clock(0.0, False),  # back to zero; the matches stay
         gr.update(interactive=True),
     )
 
@@ -335,7 +437,10 @@ def build() -> gr.Blocks:
             "the probability that they were heard right.",
             elem_id="title",
         )
-        with gr.Row(equal_height=False):
+        model_line = gr.HTML(
+            model_info(DEFAULT_MODE), padding=False, elem_id="kw-modelline"
+        )
+        with gr.Row(equal_height=False, elem_id="kw-layout"):
             # Left: only the mode and the model it runs.
             with (
                 gr.Column(scale=1, min_width=260, elem_id="kw-settings"),
@@ -348,7 +453,7 @@ def build() -> gr.Blocks:
                     info="Low latency: confidence as soon as the next word starts. High "
                     "accuracy: fewer recognition errors, confidence at the pause.",
                 )
-                model_line = gr.HTML(model_info(DEFAULT_MODE), padding=True)
+                gr.HTML(LEGEND, padding=True)
             with gr.Column(scale=3, min_width=320, elem_id="kw-main"):
                 keywords = gr.Dropdown(
                     choices=EXAMPLE_KEYWORDS,
@@ -359,17 +464,30 @@ def build() -> gr.Blocks:
                     info="Type a word or phrase and press Enter. Suffixes are matched too: "
                     "“kamp” finds “kampa”.",
                 )
-                min_confidence = gr.Slider(
-                    0, 1, value=0.5, step=0.05, label="Minimum confidence"
-                )
+                with gr.Row():
+                    min_confidence = gr.Slider(
+                        0,
+                        1,
+                        value=0.5,
+                        step=0.05,
+                        label="Minimum confidence",
+                        info="Hide matches below this.",
+                    )
+                    pause = gr.Slider(
+                        0.05,
+                        1.5,
+                        value=ENDPOINT_SILENCE,
+                        step=0.05,
+                        label="Pause (s)",
+                        info="Silence that ends a phrase; shorter is faster.",
+                    )
                 mic = gr.Audio(
                     sources=["microphone"],
                     streaming=True,
                     show_label=False,
                     waveform_options=gr.WaveformOptions(show_recording_waveform=True),
                 )
-                partial = gr.HTML(clock(0.0, False))
-                gr.HTML(LEGEND)
+                partial = gr.HTML(clock(0.0, False), padding=False)
                 results = gr.HTML(
                     render(None, EXAMPLE_KEYWORDS, 0.5), elem_id="kw-results"
                 )
@@ -378,13 +496,13 @@ def build() -> gr.Blocks:
         mode.change(model_info, mode, model_line, show_progress="hidden")
         mic.start_recording(
             start,
-            [mode, keywords, min_confidence],
+            [mode, keywords, min_confidence, pause],
             [state, results, partial, mode],
             show_progress="hidden",
         )
         mic.stream(
             on_audio,
-            [state, mic, keywords, min_confidence],
+            [state, mic, keywords, min_confidence, pause],
             [state, results, partial],
             stream_every=PACKET_SECONDS,
             show_progress="hidden",

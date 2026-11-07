@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-11-07
+
+### Added
+
+- `Stream.endpoint_silence`: the pause that ends an utterance can be read and changed while the stream runs, for example from a setting in the application. It needs the VAD.
+- Keyword spotting demo: a Pause slider (0.05 to 1.5 s, default 0.25 s) that works while recording; the real-time factor (RTF) of each match and of the session; the legend, the model link and the recording clock moved or restyled; the page is laid out around a centered main column. `SEDA_PACKET_SECONDS` sets how often the browser sends audio (default 0.05 s).
+
+### Changed
+
+- The default `endpoint_silence` with the VAD is 0.75 s, up from 0.25 s, because of the fix below: the pause that was effective in 1.2.0 was about 0.75 s (the hangover plus 0.25 s), so by default nothing changes. Measured on FLEURS dev, with the old and the new default, the VAD reports the end of speech 1.00 s and 0.98 s after it (median of 100 recordings) and single-word keyword recall of the fast and balanced modes is the same (0.796 and 0.859). Shorter pauses are now really shorter: 0.6 s reports the end after 0.83 s, 0.25 s after 0.48 s, at the price of recall: 0.780 and 0.847 at 0.6 s, 0.754 and 0.812 at 0.25 s. Pass `endpoint_silence` or set `Stream.endpoint_silence` to choose.
+
+### Fixed
+
+- `endpoint_silence` was not the pause it said: sherpa-onnx's Silero model keeps its own 0.5 s hangover (`min_silence_duration`), which was added to it. Now `endpoint_silence` is the whole pause.
+
 ## [1.2.0] - 2026-11-07
 
 ### Added

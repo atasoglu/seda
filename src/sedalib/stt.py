@@ -44,7 +44,7 @@ _VAD_FILE = "vad/silero_vad.onnx"
 _TAIL_PADDING_SECONDS = {64: 1.5, 32: 0.9, 16: 0.6, 8: 0.5}
 # Pause after speech, in seconds, that makes is_endpoint true: with the VAD, which decides every
 # ~36 ms; without it, sherpa-onnx's rule 2, which is checked once per decoded chunk.
-_ENDPOINT_SILENCE = {True: 0.25, False: 1.2}
+_ENDPOINT_SILENCE = {True: 0.75, False: 1.2}
 # The second-pass model reads 5.12 s chunks, each with 20.48 s of left context. It is fed while the
 # utterance is spoken, so at its end only the last chunk is left to decode. A chunk is decoded once it
 # is full: the end is padded with silence up to the chunk boundary plus the encoder's right context.
@@ -346,6 +346,21 @@ class Stream:
             return self._recognizer.get_result(self._stream).strip()
 
     @property
+    def endpoint_silence(self) -> float:
+        """The pause, in seconds, after which :attr:`is_endpoint` is true. It can be changed while the
+        stream runs, e.g. to let the user choose; this needs the VAD (without it, the pause is fixed
+        by the recognizer)."""
+        with self._lock:
+            return self._vad.silence if self._vad else self._owner.endpoint_silence
+
+    @endpoint_silence.setter
+    def endpoint_silence(self, seconds: float) -> None:
+        with self._lock:
+            if not self._vad:
+                raise RuntimeError("endpoint_silence of a stream needs the VAD")
+            self._vad.silence = seconds
+
+    @property
     def is_endpoint(self) -> bool:
         """True once the speaker paused for ``endpoint_silence`` seconds after speaking."""
         with self._lock:
@@ -419,7 +434,7 @@ class Recognizer:
 
     ``vad`` detects the end of speech with the model's Silero VAD (default: if the model has one),
     and ``endpoint_silence`` is the pause, in seconds, after which ``Stream.is_endpoint`` reports it
-    (default 0.25 s with the VAD, 1.2 s without).
+    (default 0.75 s with the VAD, 1.2 s without).
     """
 
     def __init__(
