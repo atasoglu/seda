@@ -5,6 +5,7 @@ import queue
 import threading
 from array import array
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import sherpa_onnx
@@ -53,6 +54,121 @@ _BEAM = 4
 _FINAL_BEAM = 8
 _LM_SCALE = 0.6
 _LODR_SCALE = -0.5
+# One encoder output frame: 10 ms features, subsampled 4x. A token's timestamp is the frame it was
+# emitted at, so a word ends about one frame after its last token.
+_FRAME_SECONDS = 0.04
+# Optional: logistic regressions from word features to the probability that the word is right, fitted
+# per decoding setup on held-out speech. Models without it, or setups it lacks, give no confidence.
+_CALIBRATION_FILE = "calibration.json"
+_FEATURE_VERSION = 1
+
+
+@dataclass(frozen=True)
+class Word:
+    """A recognized word, in spoken form, with its time in seconds from the start of the audio.
+
+    ``score`` is the geometric mean of the model's probabilities for the word's tokens. It ranks words
+    (higher is more reliable) but is not the probability that the word is right. ``confidence`` is
+    that probability, calibrated on held-out read and broadcast speech; it is None when the model has
+    no calibration for the decoding setup in use.
+    """
+
+    text: str
+    start: float
+    end: float
+    score: float
+    confidence: float | None = None
+
+
+def _features(log_probs: list[float], index: int, count: int) -> list[float]:
+    """Word features of calibration feature version 1: mean and minimum token log probability, the
+    minimum squared (with the LM, a token the acoustic model found unlikely is often right), the
+    number of tokens, and whether the word is the first or the last of the utterance."""
+    low = min(log_probs)
+    return [
+        sum(log_probs) / len(log_probs),
+        low,
+        low * low,
+        float(len(log_probs)),
+        float(index == 0),
+        float(index == count - 1),
+    ]
+
+
+def _calibration_key(chunk: int, use_lm: bool, two_pass: bool) -> str:
+    # The final text of the two-pass setup comes from the second pass, whatever the streaming chunk.
+    return f"final-lm{int(use_lm)}" if two_pass else f"chunk{chunk}-lm{int(use_lm)}"
+
+
+def _load_calibration(
+    path: Path, chunk: int, use_lm: bool, two_pass: bool
+) -> tuple[list[float], float] | None:
+    if not path.is_file():
+        return None
+    import json
+
+    cal = json.loads(path.read_text(encoding="utf-8"))
+    if cal.get("feature_version") != _FEATURE_VERSION:
+        return None
+    c = cal["configs"].get(_calibration_key(chunk, use_lm, two_pass))
+    return (c["weights"], c["bias"]) if c else None
+
+
+def _confidence(
+    calibration: tuple[list[float], float] | None,
+    log_probs: list[float],
+    index: int,
+    count: int,
+) -> float | None:
+    if calibration is None:
+        return None
+    weights, bias = calibration
+    z = bias + sum(w * f for w, f in zip(weights, _features(log_probs, index, count)))
+    return 1 / (1 + math.exp(-z))
+
+
+@dataclass(frozen=True)
+class _Tokens:
+    """The tokens of a decoding result: text pieces (a leading space starts a word), times relative
+    to the start of the stream, and log probabilities."""
+
+    tokens: tuple[str, ...] = ()
+    times: tuple[float, ...] = ()
+    log_probs: tuple[float, ...] = ()
+
+    @classmethod
+    def of(cls, recognizer: sherpa_onnx.OnlineRecognizer, stream) -> _Tokens:
+        r = recognizer.get_result_all(stream)
+        # After a reset, timestamps count from the reset (start_time).
+        return cls(
+            tuple(r.tokens),
+            tuple(r.start_time + t for t in r.timestamps),
+            tuple(r.ys_probs),
+        )
+
+    def words(
+        self,
+        offset: float = 0.0,
+        calibration: tuple[list[float], float] | None = None,
+    ) -> list[Word]:
+        groups: list[tuple[str, list[float], list[float]]] = []
+        for tok, t, lp in zip(self.tokens, self.times, self.log_probs):
+            if tok.startswith(" ") or not groups:
+                groups.append((tok.strip(), [t], [lp]))
+            else:
+                text, times, lps = groups[-1]
+                groups[-1] = (text + tok, times + [t], lps + [lp])
+        groups = [g for g in groups if g[0]]
+        return [
+            Word(
+                text,
+                round(offset + times[0], 2),
+                round(offset + times[-1] + _FRAME_SECONDS, 2),
+                math.exp(sum(lps) / len(lps)),
+                _confidence(calibration, lps, i, len(groups)),
+            )
+            for i, (text, times, lps) in enumerate(groups)
+        ]
 
 
 def _resolve(
@@ -101,6 +217,7 @@ class _FinalPass:
         self._queue: queue.SimpleQueue = queue.SimpleQueue()
         self._done = threading.Event()
         self._text = ""
+        self._tokens = _Tokens()
         threading.Thread(target=self._run, daemon=True).start()
 
     def accept(self, sample_rate: int, samples: Sequence[float]) -> None:
@@ -114,6 +231,10 @@ class _FinalPass:
         self.finish()
         self._done.wait()
         return self._text
+
+    def tokens(self) -> _Tokens:
+        self.result()
+        return self._tokens
 
     def _run(self) -> None:
         stream = self._recognizer.create_stream()  # used by this thread only
@@ -132,6 +253,7 @@ class _FinalPass:
             stream.input_finished()
             _decode(self._recognizer, stream)
             self._text = self._recognizer.get_result(stream).strip()
+            self._tokens = _Tokens.of(self._recognizer, stream)
         self._done.set()
 
 
@@ -152,11 +274,16 @@ class Stream:
         self._padding_seconds = _TAIL_PADDING_SECONDS[recognizer.chunk]
         self._vad = recognizer._end_of_speech()
         self._final = recognizer._final_pass()
+        # Seconds of audio accepted, and where the current utterance starts: word times count from
+        # the start of the stream.
+        self._seconds = 0.0
+        self._start = 0.0
 
     def accept(self, samples: Sequence[float], sample_rate: int = SAMPLE_RATE) -> str:
         """Feed mono float32 samples in [-1, 1] and return the current partial text."""
         with self._lock:
             self._sample_rate = sample_rate
+            self._seconds += len(samples) / sample_rate
             if self._final:
                 self._final.accept(sample_rate, samples)
             if self._vad:
@@ -167,11 +294,14 @@ class Stream:
 
     def finish(self) -> str:
         """Flush remaining audio and return the final text."""
+        return self._finish().finalize()
+
+    def _finish(self) -> Utterance:
         with self._lock:
             self._flush()
             self._stream.input_finished()
             _decode(self._recognizer, self._stream)
-            return Utterance(self._owner, self._stream, self._final).finalize()
+            return Utterance(self._owner, self._stream, self._final, self._start)
 
     def cut(self) -> Utterance:
         """End the current utterance and start a new one right away, e.g. at an endpoint or when the
@@ -184,11 +314,12 @@ class Stream:
         with self._lock:
             if not self._final:  # the second pass has the audio already
                 self._flush()
-            utterance = Utterance(self._owner, self._stream, self._final)
+            utterance = Utterance(self._owner, self._stream, self._final, self._start)
             if self._final:
                 self._final.finish()
             self._stream = self._recognizer.create_stream()
             self._final = self._owner._final_pass()
+            self._start = self._seconds
             if self._vad:
                 self._vad.reset()
             return utterance
@@ -204,6 +335,7 @@ class Stream:
             if self._final:
                 self._final.finish()
                 self._final = self._owner._final_pass()
+            self._start = self._seconds
             if self._vad:
                 self._vad.reset()
 
@@ -243,15 +375,33 @@ class Stream:
 class Utterance:
     """A finished utterance, cut from a :class:`Stream`."""
 
-    def __init__(self, recognizer: Recognizer, stream, final: _FinalPass | None):
+    def __init__(
+        self,
+        recognizer: Recognizer,
+        stream,
+        final: _FinalPass | None,
+        offset: float = 0.0,
+    ):
         self._owner = recognizer
         self._stream = stream
         self._final = final
+        self._offset = offset
 
     @property
     def text(self) -> str:
         """Its text from the streaming pass, in spoken form."""
         return self._owner._streaming.get_result(self._stream).strip()
+
+    @property
+    def words(self) -> list[Word]:
+        """The words of the final text, in spoken form (the formatter does not apply), with times
+        from the start of the stream. Waits for the second pass, if it is enabled."""
+        tokens = (
+            self._final.tokens()
+            if self._final
+            else _Tokens.of(self._owner._streaming, self._stream)
+        )
+        return tokens.words(self._offset, self._owner._calibration)
 
     def finalize(self) -> str:
         """The final text: the second pass and the formatter run here, if they are enabled."""
@@ -320,6 +470,9 @@ class Recognizer:
             if self.two_pass
             else None
         )
+        self._calibration = _load_calibration(
+            d / _CALIBRATION_FILE, self.chunk, self.use_lm, self.two_pass
+        )
         self._formatter = None
         if punctuate:
             from .formatter import Formatter
@@ -346,8 +499,10 @@ class Recognizer:
         Only the files needed for the chosen options are downloaded.
         """
         lm, tp, ch = _resolve(mode, use_lm, two_pass, chunk)
-        files = _required_files(lm, tp, ch, punctuate) + (
-            [] if vad is False else [_VAD_FILE]
+        files = (
+            _required_files(lm, tp, ch, punctuate)
+            + ([] if vad is False else [_VAD_FILE])
+            + [_CALIBRATION_FILE]
         )
         model_dir = download(repo_id, revision=revision, files=files)
         return cls(
@@ -375,6 +530,18 @@ class Recognizer:
         stream = self.stream()
         stream.accept(samples, sample_rate)
         return stream.finish()
+
+    def transcribe_words(
+        self, samples: Sequence[float], sample_rate: int = SAMPLE_RATE
+    ) -> list[Word]:
+        """The words of a complete mono float32 waveform in [-1, 1], in spoken form, with times."""
+        if self.two_pass:
+            final = self._final_pass()
+            final.accept(sample_rate, samples)
+            return final.tokens().words(calibration=self._calibration)
+        stream = self.stream()
+        stream.accept(samples, sample_rate)
+        return stream._finish().words
 
     def _load(
         self,

@@ -4,6 +4,7 @@ from .audio import read_wav
 from .formatter import Formatter
 from .hub import download
 from .itn import itn
+from .keywords import Detection, KeywordSpotter, KeywordStream
 from .stt import (
     CHUNKS,
     DEFAULT_REPO_ID,
@@ -12,6 +13,7 @@ from .stt import (
     Recognizer,
     Stream,
     Utterance,
+    Word,
 )
 
 __version__ = version("sedalib")
@@ -21,10 +23,14 @@ __all__ = [
     "DEFAULT_REPO_ID",
     "MODES",
     "SAMPLE_RATE",
+    "Detection",
     "Formatter",
+    "KeywordSpotter",
+    "KeywordStream",
     "Recognizer",
     "Stream",
     "Utterance",
+    "Word",
     "__version__",
     "download",
     "itn",

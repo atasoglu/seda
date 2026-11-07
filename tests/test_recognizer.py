@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from conftest import SPEECH_TEXT, supports
 
-from sedalib import MODES, Recognizer
+from sedalib import MODES, KeywordSpotter, Recognizer
 
 PIECE = 1600  # 100 ms at 16 kHz, like a microphone callback
 
@@ -150,3 +150,44 @@ def test_punctuate(model_dir, speech):
     text = recognizer(model_dir, "balanced", punctuate=True).transcribe(*speech)
     assert text[0].isupper() and text.endswith(".")
     assert "".join(c for c in text.lower() if c not in ",.?!") == SPEECH_TEXT
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_words_match_text(model_dir, speech, mode):
+    rec = recognizer(model_dir, mode)
+    words = rec.transcribe_words(*speech)
+    assert " ".join(w.text for w in words) == rec.transcribe(*speech)
+    assert all(0 < w.score <= 1 for w in words)
+    starts = [w.start for w in words]
+    assert starts == sorted(starts) and all(w.end > w.start for w in words)
+
+
+def test_word_times_count_from_stream_start(model_dir, speech):
+    rec = recognizer(model_dir, "fast")
+    stream = rec.stream()
+    feed(stream, speech[0])
+    first = stream.cut().words
+    feed(stream, speech[0])
+    second = stream.cut().words
+    duration = len(speech[0]) / speech[1]
+    assert second[-1].start > duration > first[-1].start
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_keywords_in_file_and_stream(model_dir, speech, mode):
+    spotter = KeywordSpotter(
+        recognizer(model_dir, mode), ["çocuklu aileler", "kampanya", "festival"]
+    )
+    found = spotter.find(*speech)
+    assert {d.keyword for d in found} <= {"çocuklu aileler", "festival"}
+    assert "çocuklu aileler" in {d.keyword for d in found}
+    # live: the same speech twice with a pause; detections arrive per utterance, timed from the start
+    samples, rate = speech
+    stream = spotter.stream()
+    live = []
+    for part in (samples, [0.0] * rate, samples, [0.0] * rate):
+        for i in range(0, len(part), PIECE):
+            live += stream.accept(part[i : i + PIECE], rate)
+    live += stream.finish()
+    starts = [d.start for d in live if d.keyword == "çocuklu aileler"]
+    assert len(starts) == 2 and starts[1] > len(samples) / rate + 1 > starts[0]

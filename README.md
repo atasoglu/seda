@@ -68,6 +68,32 @@ To keep accepting audio while the final text is computed, split the two steps: `
 
 A single `Recognizer` can serve many streams at once, from different threads. Call `stream.finish()` at the end of the audio to flush the remaining frames and get the final text.
 
+## Keywords
+
+`KeywordSpotter` finds words or phrases in a file or a live stream, with the time and a confidence for each:
+
+```python
+from sedalib import KeywordSpotter
+
+spotter = KeywordSpotter(recognizer, ["deneme", "bir", "iki", "üç"], min_confidence=0.5)
+
+for d in spotter.find(samples, sample_rate):
+    print(
+        d.keyword, d.text, d.start, d.end, d.confidence
+    )  # keyword, what was heard, seconds
+
+stream = spotter.stream()
+for chunk in microphone_chunks():
+    for d in stream.accept(chunk, sample_rate=16000):  # at the end of each utterance
+        print(d.keyword, d.start)
+```
+
+- **Matching:** on the final spoken-form words, as the model writes them ("Ankara'da" is "ankarada", numbers are words). The last word may carry Turkish suffixes, so "kamp" also finds "kampa" and "kampın" but not "kampanya". Stem changes are not covered: list "kitabı" too if "kitap" should find it. Short keywords can match other words this way ("at" finds "ata"); `suffixes=False` matches whole words only.
+- **Confidence:** the probability that the words were recognized right, calibrated on held-out speech for seda-v0.2 and seda-v0.2-tiny: the `fast`, `balanced` and `accurate` modes, and `chunk=8` or `16` with or without `use_lm`. On FLEURS-TR test, transcribed one sentence at a time, it is off by about 2 points on average. Other setups and models give `None`, and `min_confidence` then keeps every match.
+- **Latency:** a live detection arrives when the utterance ends, after the VAD's pause.
+
+Every word of a transcript is available too: `recognizer.transcribe_words(samples, sample_rate)` and `utterance.words` return `Word(text, start, end, score, confidence)`.
+
 ## Modes
 
 | Mode | Live text | Final text | WER | Final text after a pause | RTF |
@@ -114,6 +140,7 @@ A Gradio demo with live microphone streaming, file transcription, a control pane
 ```bash
 pip install "sedalib[demo]"
 python -m sedalib.demo.stt
+python -m sedalib.demo.keywords  # keyword spotting: type keywords, speak, see matches with confidence
 ```
 
 ## Development

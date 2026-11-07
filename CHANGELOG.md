@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-07
+
+### Added
+
+- Keyword spotting: `KeywordSpotter(recognizer, keywords).find(samples)` for files and `.stream()` for live audio return `Detection(keyword, text, start, end, score, confidence)`. Matching is on spoken-form words; the last word may carry Turkish suffixes ("kamp" finds "kampa", not "kampanya"). `min_confidence` (default 0.5) drops unsure detections.
+- Word timestamps and confidence: `Recognizer.transcribe_words()` and `Utterance.words` return `Word(text, start, end, score, confidence)` in spoken form. Times count from the start of the stream across `cut()`. `confidence` is the probability that the word is right, calibrated per decoding setup on held-out speech; it is `None` for models without a `calibration.json` or for a setup it does not cover. seda-v0.2 and seda-v0.2-tiny cover the `fast`, `balanced` and `accurate` modes and the 0.16 and 0.32 s chunks (`chunk=8` and `16`), with and without the LM.
+- Keyword spotting demo (`python -m sedalib.demo.keywords`): keywords as tags, live microphone with a waveform and a recording clock, and matches in a scrolling panel with their confidence. Two modes on seda-v0.2-tiny with 0.16 s steps: Low latency (greedy) gives a keyword's confidence as soon as the next word starts, since a word greedy search has written does not change; High accuracy (beam search + LM) gives it at the pause. A keyword shows up greyed out as soon as it is heard, and each match shows how soon after it was shown and final. Keywords and the minimum confidence can be changed while recording; a keyword counts from the moment it is added. `SEDA_MODEL`, `SEDA_CHUNK` and `SEDA_ENDPOINT_SILENCE` change the defaults.
+
 ## [1.1.0] - 2026-10-25
 
 ### Added

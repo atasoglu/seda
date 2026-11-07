@@ -6,7 +6,7 @@ import math
 import pytest
 from conftest import DATA
 
-from sedalib import MODES, Recognizer, itn, read_wav, stt
+from sedalib import MODES, KeywordSpotter, Recognizer, itn, keywords, read_wav, stt
 from sedalib.formatter import Formatter
 from sedalib.vad import _Resampler
 
@@ -101,3 +101,98 @@ def test_read_wav():
     assert rate == 16000
     assert 5 < len(samples) / rate < 8
     assert all(-1 <= s <= 1 for s in samples)
+
+
+def test_tokens_to_words():
+    tokens = stt._Tokens(
+        (" kam", "p", " ", "a", "la", "nı"),
+        (0.4, 0.44, 0.8, 0.84, 0.88, 0.92),
+        (
+            math.log(0.9),
+            math.log(0.4),
+            0.0,
+            math.log(0.5),
+            math.log(0.5),
+            math.log(0.5),
+        ),
+    )
+    a, b = tokens.words(offset=10.0)
+    assert (a.text, a.start, a.end) == ("kamp", 10.4, 10.48)
+    assert a.score == pytest.approx(0.6)  # geometric mean of 0.9 and 0.4
+    assert (b.text, b.start, b.end) == (
+        "alanı",
+        10.8,
+        10.96,
+    )  # a lone word-boundary token
+    assert a.confidence is None and b.confidence is None
+
+
+def test_word_confidence(tmp_path):
+    path = tmp_path / "calibration.json"
+    assert (
+        stt._load_calibration(path, 32, False, False) is None
+    )  # no file: no confidence
+    path.write_text(
+        '{"feature_version": 1, "configs": {"chunk32-lm0": '
+        '{"weights": [1.0, 0.0, 0.5, 0.0, -1.0, 2.0], "bias": 0.5}, '
+        '"final-lm1": {"weights": [0, 0, 0, 0, 0, 0], "bias": 0.0}}}'
+    )
+    cal = stt._load_calibration(path, 32, False, False)
+    assert stt._load_calibration(path, 64, True, False) is None  # a setup it lacks
+    # the second pass does not depend on the streaming chunk
+    assert stt._load_calibration(path, 16, True, True) == ([0] * 6, 0.0)
+    (word,) = stt._Tokens((" ev",), (0.0,), (math.log(0.5),)).words(calibration=cal)
+    lp = math.log(0.5)
+    z = (
+        0.5 + lp + 0.5 * lp * lp - 1.0 + 2.0
+    )  # the first and the last word of the utterance
+    assert word.confidence == pytest.approx(1 / (1 + math.exp(-z)))
+    path.write_text('{"feature_version": 99, "configs": {}}')
+    assert (
+        stt._load_calibration(path, 32, False, False) is None
+    )  # unknown features: ignored
+
+
+def _words(*items):
+    """Word(text, start=i, end=i+1, score, confidence) from (text, confidence) pairs."""
+    return [stt.Word(t, float(i), i + 1.0, 0.9, c) for i, (t, c) in enumerate(items)]
+
+
+def test_keyword_normalization():
+    assert keywords._spoken("Ankara'da İSTANBUL, 2 kişi!") == [
+        "ankarada",
+        "istanbul",
+        "iki",
+        "kişi",
+    ]
+    with pytest.raises(ValueError):
+        KeywordSpotter(None, ["?!"])
+
+
+def test_keyword_match():
+    words = _words(
+        ("özel", 0.9),
+        ("kampa", 0.8),
+        ("kampanya", 0.9),
+        ("sahiptir", 0.4),
+        ("ev", None),
+    )
+    spotter = KeywordSpotter(None, ["Kamp", "özel kamp", "sahip", "ev"])
+    found = [(d.keyword, d.text, d.start, d.end) for d in spotter.match(words)]
+    assert found == [
+        ("özel kamp", "özel kampa", 0.0, 2.0),
+        (
+            "Kamp",
+            "kampa",
+            1.0,
+            2.0,
+        ),  # a suffix from the list; "kampanya" is another word
+        ("ev", "ev", 4.0, 5.0),  # no calibration: kept
+    ]  # "sahiptir" is below min_confidence
+    (d,) = [d for d in spotter.match(words) if d.keyword == "özel kamp"]
+    assert d.confidence == pytest.approx(0.72) and d.score == pytest.approx(0.81)
+    strict = KeywordSpotter(None, ["kamp", "sahip"], suffixes=False, min_confidence=0.0)
+    assert strict.match(words) == []
+    assert [
+        d.text for d in KeywordSpotter(None, ["sahip"], min_confidence=0.3).match(words)
+    ] == ["sahiptir"]
