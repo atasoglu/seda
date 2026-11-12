@@ -8,12 +8,19 @@ from pathlib import Path
 # Text is normalized exactly as in training, so the symbol table must match the model's.
 _EXTRA_HINT = 'speech synthesis needs the "tts" extra: pip install "sedalib[tts]"'
 _MAX_BERT_TOKENS = 256
-_MAX_PIECE_CHARS = 120  # the longest texts the model was trained on are 117 to 127 characters
+# the longest texts the model was trained on are 117 to 127 characters
+_MAX_PIECE_CHARS = 120
 _SENTENCE_END = re.compile(r"(?<=[.!?;:])\s+")
 # A piece starts and ends with about 0.13 s of its own silence; real pauses between sentences are about 0.24 s.
 _SENTENCE_PAUSE_S = 0.12
 DEFAULT_TTS_REPO_ID = "atasoglu/seda-tts-v0.1"
-_MODEL_FILES = ("config.json", "tokenizer.json", "bert.onnx", "encoder.onnx", "decoder.onnx")
+_MODEL_FILES = (
+    "config.json",
+    "tokenizer.json",
+    "bert.onnx",
+    "encoder.onnx",
+    "decoder.onnx",
+)
 
 
 def normalize(text: str, symbols: set[str]) -> str:
@@ -83,8 +90,8 @@ class Synthesizer:
         try:
             import numpy as np
             import onnxruntime as ort
-            from tokenizers import Tokenizer
             from normalizer_tr import NormalizationError, Normalizer
+            from tokenizers import Tokenizer
         except ImportError as e:
             raise ImportError(_EXTRA_HINT) from e
         import json
@@ -150,7 +157,9 @@ class Synthesizer:
         """
         from .hub import download
 
-        return cls(download(repo_id, revision=revision, files=list(_MODEL_FILES)), **kwargs)
+        return cls(
+            download(repo_id, revision=revision, files=list(_MODEL_FILES)), **kwargs
+        )
 
     def defaults_for(self, style: str) -> dict[str, float]:
         """``noise_scale``, ``noise_scale_w`` and ``length_scale`` the model sounds best with in ``style``."""
@@ -162,7 +171,7 @@ class Synthesizer:
         self._check(self.styles, style, "style")
         return self._style_emotions[style] or self.emotions
 
-    def synthesize(self, text: str, **kwargs) -> "np.ndarray":  # noqa: F821
+    def synthesize(self, text: str, **kwargs) -> np.ndarray:  # noqa: F821
         """All the samples of ``text``; takes the arguments of :meth:`stream`."""
         np = self._np
         pieces = list(self.stream(text, **kwargs))
@@ -181,7 +190,7 @@ class Synthesizer:
         chunk_frames: int = 48,
         padding_frames: int = 24,
         seed: int | None = None,
-    ) -> Iterator["np.ndarray"]:  # noqa: F821
+    ) -> Iterator[np.ndarray]:  # noqa: F821
         """Yield float32 sample chunks in [-1, 1].
 
         ``speaker=None`` is ``default_speaker``; ``emotion=None`` lets the model infer it from the text.
@@ -199,23 +208,35 @@ class Synthesizer:
         cond = {
             "sid": np.array([self._speaker_ids[speaker]]),
             "eid": np.array(
-                [self._auto_emotion if emotion is None else self.emotions.index(emotion)]
+                [
+                    self._auto_emotion
+                    if emotion is None
+                    else self.emotions.index(emotion)
+                ]
             ),
             "stid": np.array([self._style_ids[style]]),
         }
         defaults = self.defaults_for(style)
         noise_scale = defaults["noise_scale"] if noise_scale is None else noise_scale
-        noise_scale_w = defaults["noise_scale_w"] if noise_scale_w is None else noise_scale_w
-        length_scale = defaults["length_scale"] if length_scale is None else length_scale
+        noise_scale_w = (
+            defaults["noise_scale_w"] if noise_scale_w is None else noise_scale_w
+        )
+        length_scale = (
+            defaults["length_scale"] if length_scale is None else length_scale
+        )
         rng = np.random.default_rng(seed)
-        text = " ".join(text.split())  # the normalizer rejects empty text and control characters
+        text = " ".join(
+            text.split()
+        )  # the normalizer rejects empty text and control characters
         if self._expand and text:
             try:
                 # "fallback" reads an ambiguous number ("3.") as a cardinal instead of leaving digits behind
                 text = self._expand.normalize(
                     text, ambiguity_policy="fallback"
                 ).normalized_text
-            except self._norm_error:  # e.g. invalid Unicode: speak what the model knows of it
+            except (
+                self._norm_error
+            ):  # e.g. invalid Unicode: speak what the model knows of it
                 pass
         pause = False  # the previous piece ended a sentence
         for piece in split_sentences(text):
@@ -224,12 +245,20 @@ class Synthesizer:
                 continue
             x, bert = self._text_inputs(norm)
             m_p, logs_p, g = self._acoustic(
-                x, bert, cond, rng.standard_normal((1, 2, x.shape[1])) * noise_scale_w, length_scale
+                x,
+                bert,
+                cond,
+                rng.standard_normal((1, 2, x.shape[1])) * noise_scale_w,
+                length_scale,
             )
             z_p = m_p + rng.standard_normal(m_p.shape) * np.exp(logs_p) * noise_scale
             if pause:
-                yield np.zeros(round(_SENTENCE_PAUSE_S * self.sample_rate), dtype=np.float32)
-            yield from self._vocode(z_p.astype(np.float32), g, chunk_frames, padding_frames)
+                yield np.zeros(
+                    round(_SENTENCE_PAUSE_S * self.sample_rate), dtype=np.float32
+                )
+            yield from self._vocode(
+                z_p.astype(np.float32), g, chunk_frames, padding_frames
+            )
             pause = piece[-1] in ".!?;:"
 
     @staticmethod
@@ -265,7 +294,9 @@ class Synthesizer:
         ids[1::2] = [self._ids[c] for c in norm]
         feats = np.zeros((2 * n + 1, vec.shape[1]), dtype=np.float32)
         feats[1::2] = vec[char_to_token]
-        feats[0:-1:2] = vec[char_to_token]  # a blank takes the features of the next symbol
+        feats[0:-1:2] = vec[
+            char_to_token
+        ]  # a blank takes the features of the next symbol
         feats[-1] = vec[char_to_token[-1]]
         return ids[None], feats[None]
 
@@ -283,7 +314,7 @@ class Synthesizer:
             },
         )
 
-    def _vocode(self, z_p, g, chunk: int, pad: int) -> Iterator["np.ndarray"]:  # noqa: F821
+    def _vocode(self, z_p, g, chunk: int, pad: int) -> Iterator[np.ndarray]:  # noqa: F821
         """Decode in chunks of ``chunk`` frames, each with ``pad`` frames of context on both sides.
 
         The first chunk is half as long, so the first samples arrive sooner. Less than 24 frames of context

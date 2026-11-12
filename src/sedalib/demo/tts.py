@@ -23,21 +23,54 @@ from sedalib.tts import DEFAULT_TTS_REPO_ID
 MODEL = os.environ.get("SEDA_TTS_MODEL", DEFAULT_TTS_REPO_ID)
 # text, style, emotion: a sentence that carries its emotion, so the voice and the words agree
 EXAMPLES = [
-    ["Sınavı geçtim! İnanamıyorum, bütün o geceler sonunda işe yaradı. Hadi bu akşam kutlayalım!", "normal", "happy"],
-    ["Bütün yaz bu geziyi bekledim ama son anda iptal edildi. Şimdi hiçbir şey yapmak istemiyorum.", "normal", "sad"],
-    ["Yeter artık! Kaç kere söyleyeceğim sana? Arabamı bir daha sormadan alırsan çok fena olur!", "normal", "angry"],
-    ["Biri içeride! Kapının arkasında bir gölge var, çabuk polisi ara! Lütfen acele et!", "normal", "fearful"],
-    ["Ne? Gerçekten mi? Piyangodan büyük ikramiye bize mi çıktı? Bu imkânsız, inanamıyorum!", "normal", "surprised"],
-    ["Toplantı 12 Mayıs'ta saat 14:30'da başlayacak; katılım ücreti 250 TL.", "normal", "neutral"],
+    [
+        "Sınavı geçtim! İnanamıyorum, bütün o geceler sonunda işe yaradı. Hadi bu akşam kutlayalım!",
+        "normal",
+        "happy",
+    ],
+    [
+        "Bütün yaz bu geziyi bekledim ama son anda iptal edildi. Şimdi hiçbir şey yapmak istemiyorum.",
+        "normal",
+        "sad",
+    ],
+    [
+        "Yeter artık! Kaç kere söyleyeceğim sana? Arabamı bir daha sormadan alırsan çok fena olur!",
+        "normal",
+        "angry",
+    ],
+    [
+        "Biri içeride! Kapının arkasında bir gölge var, çabuk polisi ara! Lütfen acele et!",
+        "normal",
+        "fearful",
+    ],
+    [
+        "Ne? Gerçekten mi? Piyangodan büyük ikramiye bize mi çıktı? Bu imkânsız, inanamıyorum!",
+        "normal",
+        "surprised",
+    ],
+    [
+        "Toplantı 12 Mayıs'ta saat 14:30'da başlayacak; katılım ücreti 250 TL.",
+        "normal",
+        "neutral",
+    ],
     ["Uyu artık, her şey yolunda. Ben hemen yanındayım.", "whisper", "calm"],
     ["Sokak çok karanlık. Biri bizi takip ediyor, korkuyorum.", "whisper", "fearful"],
-    ["Konser biletleri tükenmiş, bu akşam gidemiyoruz. Çok üzüldüm ama ona belli etme.", "whisper", "sad"],
-    ["Anahtar masanın sağ çekmecesinde, mavi defterin arasında. Kimseye söyleme.", "whisper", "neutral"],
+    [
+        "Konser biletleri tükenmiş, bu akşam gidemiyoruz. Çok üzüldüm ama ona belli etme.",
+        "whisper",
+        "sad",
+    ],
+    [
+        "Anahtar masanın sağ çekmecesinde, mavi defterin arasında. Kimseye söyleme.",
+        "whisper",
+        "neutral",
+    ],
 ]
 AUTO = "auto (from the text)"
 
 _synth: Synthesizer | None = None
-_lock = threading.Lock()  # one request decodes at a time: a single thread is the low-latency setup
+# one request decodes at a time: a single thread is the low-latency setup
+_lock = threading.Lock()
 
 
 def _load() -> Synthesizer:
@@ -107,9 +140,7 @@ def build() -> gr.Blocks:
     synth = _load()
     d = synth.defaults_for("normal")
     with gr.Blocks(title="Seda TTS") as demo:
-        gr.Markdown(
-            "# Seda TTS\nTurkish speech synthesis. The voices are synthetic."
-        )
+        gr.Markdown("# Seda TTS\nTurkish speech synthesis. The voices are synthetic.")
         waveform = gr.Audio(
             label="Audio",
             interactive=False,
@@ -130,9 +161,7 @@ def build() -> gr.Blocks:
                 label="Speaker",
                 visible=len(synth.speakers) > 1,
             )
-            style = gr.Dropdown(
-                synth.styles, value="normal", label="Style"
-            )
+            style = gr.Dropdown(synth.styles, value="normal", label="Style")
             emotion = gr.Dropdown(
                 [AUTO, *synth.emotions_for("normal")],
                 value=EXAMPLES[0][2],
@@ -146,24 +175,31 @@ def build() -> gr.Blocks:
             label="Examples",
             examples_per_page=len(EXAMPLES),
         )
-        with gr.Accordion("Advanced", open=False):
-            with gr.Row():
-                noise_scale = gr.Slider(
-                    0.0, 1.0, d["noise_scale"], step=0.05, label="Voice variation"
-                )
-                noise_scale_w = gr.Slider(
-                    0.0, 1.0, d["noise_scale_w"], step=0.05, label="Rhythm variation"
-                )
-                length_scale = gr.Slider(
-                    0.5, 2.0, d["length_scale"], step=0.05, label="Duration (×)"
-                )
+        with gr.Accordion("Advanced", open=False), gr.Row():
+            noise_scale = gr.Slider(
+                0.0, 1.0, d["noise_scale"], step=0.05, label="Voice variation"
+            )
+            noise_scale_w = gr.Slider(
+                0.0, 1.0, d["noise_scale_w"], step=0.05, label="Rhythm variation"
+            )
+            length_scale = gr.Slider(
+                0.5, 2.0, d["length_scale"], step=0.05, label="Duration (×)"
+            )
 
         style.change(
             style_changed,
             [style, emotion],
             [emotion, noise_scale, noise_scale_w, length_scale],
         )
-        inputs = [text, speaker, emotion, style, noise_scale, noise_scale_w, length_scale]
+        inputs = [
+            text,
+            speaker,
+            emotion,
+            style,
+            noise_scale,
+            noise_scale_w,
+            length_scale,
+        ]
         gr.on(
             [button.click, text.submit],
             speak,

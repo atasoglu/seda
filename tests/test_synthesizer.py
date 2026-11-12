@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("onnxruntime")
 pytest.importorskip("normalizer_tr")
 
-from sedalib import Synthesizer  # noqa: E402
+from sedalib import Synthesizer
 
 MODEL = os.environ.get("SEDA_TEST_TTS_MODEL")
 pytestmark = pytest.mark.skipif(not MODEL, reason="SEDA_TEST_TTS_MODEL is not set")
@@ -69,7 +69,9 @@ def test_empty_and_unknown(synth):
 
 def test_styles_and_defaults(synth):
     for style in synth.styles:
-        assert {"noise_scale", "noise_scale_w", "length_scale"} <= set(synth.defaults_for(style))
+        assert {"noise_scale", "noise_scale_w", "length_scale"} <= set(
+            synth.defaults_for(style)
+        )
         assert synth.emotions_for(style)
     assert synth.default_speaker in synth.speakers
     with pytest.raises(ValueError):
@@ -77,7 +79,7 @@ def test_styles_and_defaults(synth):
     untrained = set(synth.emotions) - set(synth.emotions_for(synth.styles[-1]))
     if untrained:  # an emotion the style was not trained with
         with pytest.raises(ValueError):
-            synth.synthesize("merhaba", style=synth.styles[-1], emotion=sorted(untrained)[0])
+            synth.synthesize("merhaba", style=synth.styles[-1], emotion=min(untrained))
 
 
 def test_pause_between_pieces(synth):
@@ -85,4 +87,3 @@ def test_pause_between_pieces(synth):
     chunks = list(synth.stream(f"{sentence} {sentence}", seed=0))
     pause = round(0.12 * synth.sample_rate)
     assert any(len(c) == pause and not c.any() for c in chunks)
-
