@@ -19,7 +19,7 @@ Seda aims to provide models that are small enough to run on a CPU, fast enough f
 | [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2) | Streaming STT | Zipformer2 transducer + second pass | 66.1M | 6.38 (`accurate`), 7.26 (`balanced`) |
 | [seda-v0.2-tiny](https://huggingface.co/atasoglu/seda-v0.2-tiny) | Streaming STT | Zipformer2 transducer + second pass | 4.5M | 10.51 (`accurate`), 11.24 (`balanced`) |
 | [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) | Streaming STT | Zipformer2 transducer | 66.1M | 11.60 |
-| [seda-tts-v0.1](https://huggingface.co/atasoglu/seda-tts-v0.1) | TTS | VITS + BERT | 19.1M + 29.3M BERT | – |
+| [seda-tts-v0.1](https://huggingface.co/atasoglu/seda-tts-v0.1) | TTS | VITS + BERT | 19.1M + 29.3M | – |
 
 For comparison, Whisper small scores 11.87, Whisper medium 6.62 and Whisper large-v3 4.62 on the same set. See the [seda-v0.2 card](https://huggingface.co/atasoglu/seda-v0.2) for noisy, telephone and broadcast audio. seda-v0.2-tiny is distilled from seda-v0.2 for slow CPUs, phones and the browser: its acoustic model is 7 MB, and it runs every mode with the same options (`Recognizer.from_pretrained("atasoglu/seda-v0.2-tiny")`).
 
