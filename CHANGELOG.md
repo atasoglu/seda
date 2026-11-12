@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.4.0] - 2026-11-12
+
+### Added
+
+- Speech synthesis: `Synthesizer.from_pretrained("atasoglu/seda-tts-v0.1")` (or `Synthesizer(model_dir)`), `.synthesize(text)` and `.stream(text)` run a seda VITS model with onnxruntime (no PyTorch). It takes a speaker, an emotion and a style, offers only the voices, styles and emotions a model's `config.json` releases, and uses each style's own settings (`defaults_for`, `emotions_for`; a whisper needs more variation than normal speech). Short sentences are read together up to 120 characters, the longest the model was trained on, with a short pause between longer pieces. It decodes in chunks, so the first samples arrive after one BERT pass, the encoder and half a chunk. Numbers, dates, currency and abbreviations are first written out in words with [normalizer-tr](https://pypi.org/project/normalizer-tr/) (`expand=True`, Python 3.11 or newer). Needs the new `tts` extra.
+- Speech synthesis demo (`python -m sedalib.demo.tts`; downloads seda-tts-v0.1, `SEDA_TTS_MODEL` picks a local directory or another repo): the audio plays on top in a waveform player, with the time to the first chunk and the RTF of each request; text, style and emotion below it (the speaker too when a model releases more than one), then one table of example sentences for the emotions and the whisper that sets the text, style and emotion together; the variation controls are under Advanced. A style switches to its own emotions and settings.
+- `write_wav` writes mono float samples as a 16-bit PCM WAV file.
+
 ## [1.3.0] - 2026-11-07
 
 ### Added

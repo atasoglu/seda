@@ -30,6 +30,6 @@ uv run --group examples python examples/streaming.py   # microphone example
 - Python >= 3.10, `src/` layout.
 - The version comes from git tags (hatch-vcs). Never hardcode it. Pushing a `v*` tag publishes to PyPI, and the release notes come from `CHANGELOG.md`.
 - Update `CHANGELOG.md` (Keep a Changelog) for user-facing changes.
-- Tests live in `tests/`. Unit tests need no model; model tests run against each entry of `SEDA_TEST_MODEL` (local dirs or repo ids, comma-separated) and skip modes a model lacks. CI runs them after lint against the models listed in its workflow.
+- Tests live in `tests/`. Unit tests need no model; model tests run against each entry of `SEDA_TEST_MODEL` (local dirs or repo ids, comma-separated) and skip modes a model lacks. Speech synthesis tests run against `SEDA_TEST_TTS_MODEL` (a local dir or a repo id). CI runs them after lint against the models listed in its workflow.
 - The README is in English and stays concise: no file-structure section and no `---` dividers.
 - Ask the maintainer to review before committing.

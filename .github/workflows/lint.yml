@@ -35,6 +35,8 @@ jobs:
     env:
       # Tests that need a model run against each of these (see tests/conftest.py).
       SEDA_TEST_MODEL: atasoglu/seda-v0.2,atasoglu/seda-v0.2-tiny,atasoglu/seda-v0.1
+      # Speech synthesis tests (skipped on Python 3.10, where normalizer-tr is not available).
+      SEDA_TEST_TTS_MODEL: atasoglu/seda-tts-v0.1
 
     steps:
     - uses: actions/checkout@v4
@@ -49,11 +51,11 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/huggingface/hub
-        key: hf-models-${{ hashFiles('src/sedalib/stt.py') }}
+        key: hf-models-${{ hashFiles('src/sedalib/stt.py', 'src/sedalib/tts.py') }}
         restore-keys: hf-models-
 
     - name: Install dependencies
-      run: uv sync --extra format --python ${{ matrix.python }}
+      run: uv sync --extra format --extra tts --python ${{ matrix.python }}
 
     - name: Run tests
       run: uv run pytest -v

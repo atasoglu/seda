@@ -196,3 +196,31 @@ def test_keyword_match():
     assert [
         d.text for d in KeywordSpotter(None, ["sahip"], min_confidence=0.3).match(words)
     ] == ["sahiptir"]
+
+
+def test_tts_normalize_and_split():
+    from sedalib import tts
+
+    symbols = set("_ .,!?;:'-abcçdefgğhıijklmnoöprsştuüvyz")
+    assert tts.normalize("İSTANBUL ışık, ÇOK 12!", symbols) == "istanbul ışık, çok !"
+    # short sentences stay together, as in a third of the training clips
+    assert tts.split_sentences("Merhaba. Nasılsın? İyiyim") == [
+        "Merhaba. Nasılsın? İyiyim"
+    ]
+    sentence = "Bugün hava çok güzel, akşamüstü sahilde uzun bir yürüyüşe çıkalım mı?"  # 70 characters
+    assert tts.split_sentences(f"{sentence} {sentence}") == [sentence, sentence]
+    # a sentence longer than the model was trained on is split between words, its neighbours kept whole
+    long = " ".join(["kelime"] * 100) + "."
+    pieces = tts.split_sentences(f"Kısa. {long} Son.")
+    assert pieces[0] == "Kısa." and pieces[-1] == "Son."
+    assert all(len(p) <= 120 for p in pieces)
+    assert " ".join(pieces) == f"Kısa. {long} Son."
+
+
+def test_write_wav_roundtrip(tmp_path):
+    from sedalib import write_wav
+
+    write_wav(tmp_path / "a.wav", [0.0, 0.5, -0.5, 2.0], 22050)
+    samples, rate = read_wav(tmp_path / "a.wav")
+    assert rate == 22050 and len(samples) == 4
+    assert samples[1] == pytest.approx(0.5, abs=1e-3) and samples[3] < 1.0
